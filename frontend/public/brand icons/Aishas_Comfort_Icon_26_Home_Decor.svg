@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 128 128">
+  <title>Aishas Comfort — Uy dekori</title>
+  <g fill="none" stroke="#17233C" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M48 48h32l7 42c1 7-4 12-11 12H52c-7 0-12-5-11-12l7-42Z"/><path d="M64 48V30M64 38c-9-11-18-8-22-2 9 6 16 6 22 2ZM64 42c9-11 18-8 22-2-9 6-16 6-22 2Z"/>
+  </g>
+  <path d="M45 109c6 7 12 10 19 10s13-3 19-10" fill="none" stroke="#F45B5B" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="105" cy="23" r="5" fill="#FFC27A"/>
+</svg>

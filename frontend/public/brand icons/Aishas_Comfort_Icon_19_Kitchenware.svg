@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 128 128">
+  <title>Aishas Comfort — Oshxona buyumlari</title>
+  <g fill="none" stroke="#17233C" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M31 50h66v37c0 8-6 14-14 14H45c-8 0-14-6-14-14V50ZM25 50h78M43 38h42M55 30h18M97 61h10c8 0 10 16 0 20H97"/>
+  </g>
+  <path d="M45 109c6 7 12 10 19 10s13-3 19-10" fill="none" stroke="#F45B5B" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="105" cy="23" r="5" fill="#FFC27A"/>
+</svg>

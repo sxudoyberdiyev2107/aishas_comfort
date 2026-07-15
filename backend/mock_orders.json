@@ -1,0 +1,36 @@
+[
+  {
+    "id": 1784091987117,
+    "customer_name": "Test Client 2",
+    "phone_number": "+998 90 123 45 67",
+    "delivery_address": "Toshkent shahar, Chilonzor tumani, 9-kvartal",
+    "total_price": 2900000,
+    "items": [
+      {
+        "product_id": 1,
+        "name_uz": "Ergonomik o'quv partasi va stul to'plami",
+        "name_ru": "Эргономичный комплект учебной парты и стула",
+        "price": 1450000,
+        "quantity": 2
+      }
+    ],
+    "created_at": "2026-07-15T05:06:27.133Z"
+  },
+  {
+    "id": 1784092436963,
+    "customer_name": "Javlon",
+    "phone_number": "+998770043324",
+    "delivery_address": "Toshkent Zangi ota ",
+    "total_price": 960000,
+    "items": [
+      {
+        "product_id": 2,
+        "name_uz": "Bolalar uchun yig'iladigan kichik parta",
+        "name_ru": "Детская складная мини-парта",
+        "quantity": 3,
+        "price": 320000
+      }
+    ],
+    "created_at": "2026-07-15T05:13:56.968Z"
+  }
+]

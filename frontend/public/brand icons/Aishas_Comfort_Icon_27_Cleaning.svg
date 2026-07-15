@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 128 128">
+  <title>Aishas Comfort — Tozalash buyumlari</title>
+  <g fill="none" stroke="#17233C" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M77 27 51 91M72 25l11 4M44 91h28l-6 11H38l6-11Z"/><path d="M92 45v43M82 88h20l-4 14H86l-4-14ZM91 45h3"/>
+  </g>
+  <path d="M45 109c6 7 12 10 19 10s13-3 19-10" fill="none" stroke="#F45B5B" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="105" cy="23" r="5" fill="#FFC27A"/>
+</svg>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 128 128">
+  <title>Aishas Comfort — Idishlar</title>
+  <g fill="none" stroke="#17233C" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="53" cy="66" r="29"/><circle cx="53" cy="66" r="17"/><path d="M87 48h17v31H87c-7 0-12-6-12-15s5-16 12-16ZM104 55h5c9 0 9 17 0 17h-5"/>
+  </g>
+  <path d="M45 109c6 7 12 10 19 10s13-3 19-10" fill="none" stroke="#F45B5B" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="105" cy="23" r="5" fill="#FFC27A"/>
+</svg>

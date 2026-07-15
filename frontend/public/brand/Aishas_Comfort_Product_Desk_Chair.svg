@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="700" viewBox="0 0 900 700">
+  <title>Stylized desk and chair product placeholder</title>
+  <ellipse cx="454" cy="612" rx="340" ry="42" fill="#17233C" opacity=".08"/>
+  <path d="M174 242h540v58H174z" fill="#FFC27A"/>
+  <path d="M214 300h48v284h-48zM626 300h48v284h-48z" fill="#17233C"/>
+  <rect x="334" y="96" width="220" height="146" rx="24" fill="#17233C"/>
+  <rect x="358" y="120" width="172" height="98" rx="12" fill="#FFF8F1"/>
+  <circle cx="444" cy="230" r="8" fill="#F45B5B"/>
+  <path d="M363 376h195v112H363z" fill="#F45B5B"/>
+  <path d="M388 330h145c24 0 42 18 42 42v26H346v-26c0-24 18-42 42-42Z" fill="#17233C"/>
+  <path d="M391 488h139v38H391zM425 526h70v68H425zM366 594h188" fill="#17233C"/>
+</svg>

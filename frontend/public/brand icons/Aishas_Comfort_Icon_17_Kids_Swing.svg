@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 128 128">
+  <title>Aishas Comfort — Bolalar arg‘imchog‘i</title>
+  <g fill="none" stroke="#17233C" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M22 98 52 27h24l30 71M42 98h44M53 42l11 18 11-18M52 60v25M76 60v25M49 85h30"/>
+  </g>
+  <path d="M45 109c6 7 12 10 19 10s13-3 19-10" fill="none" stroke="#F45B5B" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="105" cy="23" r="5" fill="#FFC27A"/>
+</svg>

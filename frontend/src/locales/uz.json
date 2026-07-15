@@ -1,0 +1,119 @@
+{
+  "logo": "Aisha's Comfort",
+  "navigation": {
+    "home": "Bosh sahifa",
+    "shop": "Do‘kon",
+    "newArrivals": "Yangi mahsulotlar",
+    "promos": "Aksiyalar",
+    "about": "Biz haqimizda",
+    "contact": "Aloqa"
+  },
+  "header": {
+    "search": "Mahsulotlarni qidirish...",
+    "account": "Profil",
+    "cart": "Savat"
+  },
+  "hero": {
+    "slide1": {
+      "title": "ERQONOMIK VA SIFATLI UY MEBELLARI",
+      "sub": "Premium o'quv partalari, ergonomik stullar va shinam ofis mebellari kolleksiyasi.",
+      "cta": "HOZIR XARID QILISH"
+    },
+    "slide2": {
+      "title": "PROFESSIONAL O'YIN KRESLOLARI",
+      "sub": "Uzoq vaqt qulay o'tirish va bel og'rig'ini oldini oluvchi gaming kreslolar.",
+      "cta": "BATAFSIL KO'RISH"
+    },
+    "slide3": {
+      "title": "KEMPING VA KO'CHMA MEBELLAR",
+      "sub": "Tabiat qo'ynida dam olish uchun engil, buklanuvchi va qulay mebellar.",
+      "cta": "KATALOGNI KO'RISH"
+    }
+  },
+  "benefits": {
+    "title": "Bizning afzalliklarimiz",
+    "deliveryTitle": "Xavfsiz yetkazib berish",
+    "deliveryDesc": "O'zbekiston bo'ylab mebellarni shikastlamasdan yetkazamiz.",
+    "paymentTitle": "Xavfsiz to'lov",
+    "paymentDesc": "Payme, Click yoki naqd pul orqali to'lov.",
+    "guaranteeTitle": "Mebel kafolati",
+    "guaranteeDesc": "Barcha mebellarga 1 yillik rasmiy kafolat beramiz.",
+    "supportTitle": "Qo'llab-quvvatlash",
+    "supportDesc": "Professional mutaxassislar 24/7 aloqada."
+  },
+  "categories": {
+    "title": "Kategoriyalar",
+    "viewAll": "Barchasini ko'rish",
+    "parta-stullar": "Parta va stullar",
+    "bolalar-o-yingohlari": "Bolalar o'yingohlari",
+    "kompyuter-ish-stollari": "Kompyuter va ish stollari",
+    "ofis-kreslolari": "Ofis kreslolari",
+    "game-kreslolari": "Game kreslolari (Geymer kreslolari)",
+    "bar-stullari": "Bar stullari",
+    "boshqa-stul-kreslolar": "Boshqa stul va kreslolar",
+    "yugurish-yo-laklari": "Yugurish yo'laklari",
+    "velo-trenajyorlar": "Velo trenajyorlar",
+    "tebratma-kursilar": "Tebratma kursilar",
+    "kitob-javonlari": "Kitob javonlari",
+    "kemping-uchun": "Kemping uchun",
+    "stollar": "Stollar"
+  },
+  "products": {
+    "newArrivalsTitle": "Yangi Kelgan Mahsulotlar",
+    "bestsellerTitle": "Ko'p Sotiladigan Mahsulotlar",
+    "addToCart": "Savatga qo'shish",
+    "added": "Savatda",
+    "priceCurrency": "so'm"
+  },
+  "checkout": {
+    "title": "Buyurtmani rasmiylashtirish",
+    "nameLabel": "Ismingiz",
+    "phoneLabel": "Telefon raqamingiz",
+    "addressLabel": "Yetkazib berish manzili",
+    "summaryTitle": "Buyurtma tafsilotlari",
+    "submitBtn": "Buyurtmani tasdiqlash",
+    "successMsg": "Buyurtmangiz muvaffaqiyatli qabul qilindi!",
+    "successSubMsg": "Tez orada operatorlarimiz siz bilan bog'lanishadi.",
+    "total": "Jami:",
+    "emptyCart": "Savat bo'sh. Buyurtma berish uchun mahsulot qo'shing."
+  },
+  "admin": {
+    "title": "Admin Dashboard",
+    "loginTitle": "Tizimga kirish",
+    "username": "Foydalanuvchi nomi",
+    "password": "Parol",
+    "loginBtn": "Tizimga kirish",
+    "loginError": "Foydalanuvchi nomi yoki parol noto'g'ri!",
+    "logoutBtn": "Chiqish",
+    "addProduct": "Mahsulot qo'shish",
+    "editProduct": "Tahrirlash",
+    "deleteProduct": "O'chirish",
+    "productNameUz": "Nomi (UZ)",
+    "productNameRu": "Nomi (RU)",
+    "productPrice": "Narxi",
+    "productStock": "Zaxira (dona)",
+    "productDescUz": "Tavsifi (UZ)",
+    "productDescRu": "Tavsifi (RU)",
+    "category": "Kategoriya",
+    "image": "Rasm URL",
+    "saveBtn": "Saqlash",
+    "deleteConfirm": "Haqiqatan ham bu mahsulotni o'chirmoqchimisiz?",
+    "actionColumn": "Amallar",
+    "ordersTitle": "Buyurtmalar ro'yxati",
+    "newBadge": "YANGI",
+    "saleBadge": "CHEGIRMA",
+    "customer": "Mijoz",
+    "phone": "Telefon",
+    "address": "Manzil",
+    "totalPrice": "Jami Summa",
+    "status": "Holati",
+    "date": "Sana"
+  },
+  "cart": {
+    "title": "Savat",
+    "empty": "Savatingiz hozircha bo'sh.",
+    "checkout": "Xaridni rasmiylashtirish",
+    "total": "Jami:",
+    "continue": "Xaridni davom ettirish"
+  }
+}

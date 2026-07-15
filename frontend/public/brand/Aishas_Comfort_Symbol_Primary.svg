@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <title>Aishas Comfort primary symbol</title>
+  <rect x="36" y="36" width="440" height="440" rx="112" fill="#17233C"/>
+  <text x="256" y="286" text-anchor="middle" fill="#FFF8F1" font-family="Manrope, DejaVu Sans, sans-serif" font-size="188" font-weight="800" letter-spacing="-14">AC</text>
+  <path d="M146 344c32 37 69 54 110 54s78-17 110-54" fill="none" stroke="#F45B5B" stroke-width="28" stroke-linecap="round"/>
+  <circle cx="390" cy="122" r="34" fill="#FFC27A"/>
+</svg>
