@@ -60,7 +60,7 @@ export default function CategoryPage({ params }) {
     }
   ];
 
-  const backendUrl = 'http://localhost:5000/api';
+  const backendUrl = 'https://aishascomfort-production.up.railway.app/api';
 
   useEffect(() => {
     const fetchAndFilterProducts = async () => {
@@ -88,7 +88,7 @@ export default function CategoryPage({ params }) {
         setIconUrl(null);
       } else if (slug !== 'all') {
         filtered = rawProducts.filter(p => p.category === slug);
-        
+
         const iconMap = {
           'parta-stullar': '/brand icons/Aishas_Comfort_Icon_15_School_Desk.svg',
           'bolalar-o-yingohlari': '/brand icons/Aishas_Comfort_Icon_17_Kids_Swing.svg',
@@ -104,7 +104,7 @@ export default function CategoryPage({ params }) {
           'kemping-uchun': '/brand icons/Aishas_Comfort_Icon_03_Coffee_Table.svg',
           'stollar': '/brand icons/Aishas_Comfort_Icon_09_Dining_Table.svg'
         };
-        
+
         setTitle(t('categories.' + slug) || slug.toUpperCase());
         setIconUrl(iconMap[slug] || null);
       } else {
@@ -132,10 +132,10 @@ export default function CategoryPage({ params }) {
         <div className="category-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '8px' }}>
             {iconUrl && (
-              <img 
-                src={iconUrl} 
-                alt="" 
-                style={{ width: '36px', height: '36px', objectFit: 'contain' }} 
+              <img
+                src={iconUrl}
+                alt=""
+                style={{ width: '36px', height: '36px', objectFit: 'contain' }}
               />
             )}
             <h1 className="category-title" style={{ margin: 0 }}>{title}</h1>
@@ -146,7 +146,7 @@ export default function CategoryPage({ params }) {
             </span>
             <div className="sort-selector-wrapper">
               <label htmlFor="sort-select" className="sr-only">Sort</label>
-              <select 
+              <select
                 id="sort-select"
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value)}

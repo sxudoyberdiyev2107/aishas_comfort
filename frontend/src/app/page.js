@@ -59,7 +59,7 @@ export default function Home() {
   React.useEffect(() => {
     const fetchProducts = async () => {
       try {
-        const res = await fetch('http://localhost:5000/api/products');
+        const res = await fetch('https://aishascomfort-production.up.railway.app/api/products');
         if (res.ok) {
           const data = await res.json();
           setProducts(data);
@@ -134,8 +134,8 @@ export default function Home() {
               {language === 'uz' ? 'Uyingizga shinamlik ulashing' : 'Подарите уют вашему дому'}
             </h2>
             <p className="promo-description">
-              {language === 'uz' 
-                ? 'Barcha yotoqxona va hammom to\'plamlariga 20% gacha yozgi chegirmalar.' 
+              {language === 'uz'
+                ? 'Barcha yotoqxona va hammom to\'plamlariga 20% gacha yozgi chegirmalar.'
                 : 'Летние скидки до 20% на все спальные и банные комплекты.'}
             </p>
             <div>

@@ -79,7 +79,7 @@ export default function ProductDetailPage({ params }) {
     }
   ];
 
-  const backendUrl = 'http://localhost:5000/api';
+  const backendUrl = 'https://aishascomfort-production.up.railway.app/api';
 
   useEffect(() => {
     const fetchProduct = async () => {
@@ -146,7 +146,7 @@ export default function ProductDetailPage({ params }) {
       }
 
       localStorage.setItem('cart', JSON.stringify(cart));
-      
+
       // Dispatch custom event to notify Header
       window.dispatchEvent(new Event('cartUpdated'));
 
@@ -163,9 +163,9 @@ export default function ProductDetailPage({ params }) {
         <div className="detail-image-col">
           <div className="detail-image-wrapper">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img 
-              src={product.image_url} 
-              alt={name} 
+            <img
+              src={product.image_url}
+              alt={name}
               className="detail-image"
             />
             {product.is_new && <span className="detail-badge badge-new">{t('admin.newBadge')}</span>}
@@ -175,11 +175,11 @@ export default function ProductDetailPage({ params }) {
           {/* YouTube Video Embed */}
           {embedUrl && (
             <div className="detail-video-wrapper" style={{ marginTop: '32px' }}>
-              <h3 style={{ 
-                fontSize: '14px', 
-                fontFamily: 'var(--font-oswald)', 
-                textTransform: 'uppercase', 
-                marginBottom: '16px', 
+              <h3 style={{
+                fontSize: '14px',
+                fontFamily: 'var(--font-oswald)',
+                textTransform: 'uppercase',
+                marginBottom: '16px',
                 letterSpacing: '1px',
                 color: 'var(--primary-dark)',
                 borderBottom: '1px solid var(--border-color)',
@@ -212,7 +212,7 @@ export default function ProductDetailPage({ params }) {
           </nav>
 
           <h1 className="detail-title">{name}</h1>
-          
+
           <div className="detail-price-row">
             <span className="detail-price">
               {parseFloat(product.price).toLocaleString()} {t('products.priceCurrency')}
@@ -230,7 +230,7 @@ export default function ProductDetailPage({ params }) {
             <span>
               {language === 'uz' ? 'Holati:' : 'Статус:'}{' '}
               <strong className={product.in_stock ? 'in-stock' : 'out-of-stock'}>
-                {product.in_stock 
+                {product.in_stock
                   ? (language === 'uz' ? 'Mavjud' : 'В наличии')
                   : (language === 'uz' ? 'Tugagan' : 'Нет в наличии')}
               </strong>
@@ -240,8 +240,8 @@ export default function ProductDetailPage({ params }) {
           <div className="purchase-controls">
             {/* Quantity selector */}
             <div className="quantity-selector">
-              <button 
-                onClick={decrementQty} 
+              <button
+                onClick={decrementQty}
                 className="qty-btn"
                 aria-label="Decrease quantity"
                 disabled={!product.in_stock}
@@ -249,8 +249,8 @@ export default function ProductDetailPage({ params }) {
                 -
               </button>
               <span className="qty-number" aria-live="polite">{quantity}</span>
-              <button 
-                onClick={incrementQty} 
+              <button
+                onClick={incrementQty}
                 className="qty-btn"
                 aria-label="Increase quantity"
                 disabled={!product.in_stock}
@@ -260,12 +260,12 @@ export default function ProductDetailPage({ params }) {
             </div>
 
             {/* Add To Cart Button */}
-            <button 
-              onClick={handleAddToCart} 
+            <button
+              onClick={handleAddToCart}
               disabled={isAdding || !product.in_stock}
               className={`btn-primary btn-detail-cart ${isAdding ? 'adding' : ''}`}
             >
-              {!product.in_stock 
+              {!product.in_stock
                 ? (language === 'uz' ? 'Tugagan' : 'Нет в наличии')
                 : (isAdding ? t('products.added') : t('products.addToCart'))}
             </button>

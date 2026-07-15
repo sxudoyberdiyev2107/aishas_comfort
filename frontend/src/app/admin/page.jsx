@@ -8,7 +8,7 @@ export default function AdminPage() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('products'); // products, orders
-  
+
   // Login Form States
   const [loginData, setLoginData] = useState({ username: '', password: '' });
   const [loginError, setLoginError] = useState('');
@@ -35,7 +35,7 @@ export default function AdminPage() {
     video_url: ''
   });
 
-  const backendUrl = 'http://localhost:5000/api';
+  const backendUrl = 'https://aishascomfort-production.up.railway.app/api';
 
   // 1. Verify Auth session on load
   useEffect(() => {
@@ -69,7 +69,7 @@ export default function AdminPage() {
         const prodData = await prodRes.json();
         setProducts(prodData);
       }
-      
+
       // Fetch Orders
       const orderRes = await fetch(`${backendUrl}/orders`, { credentials: 'include' });
       if (orderRes.ok) {
@@ -128,7 +128,7 @@ export default function AdminPage() {
     setCrudError('');
     setCrudSuccess('');
 
-    const url = isEditing 
+    const url = isEditing
       ? `${backendUrl}/products/${editingId}`
       : `${backendUrl}/products`;
 
@@ -155,7 +155,7 @@ export default function AdminPage() {
 
       if (res.ok) {
         setCrudSuccess(
-          isEditing 
+          isEditing
             ? (language === 'uz' ? 'Mahsulot muvaffaqiyatli tahrirlandi.' : 'Товар успешно изменен.')
             : (language === 'uz' ? 'Mahsulot muvaffaqiyatli qo\'shildi.' : 'Товар успешно добавлен.')
         );
@@ -251,8 +251,8 @@ export default function AdminPage() {
             <form onSubmit={handleLoginSubmit} className="login-form">
               <div className="form-group">
                 <label htmlFor="user-input" className="form-label">{t('admin.username')}</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   id="user-input"
                   required
                   value={loginData.username}
@@ -263,8 +263,8 @@ export default function AdminPage() {
               </div>
               <div className="form-group">
                 <label htmlFor="pass-input" className="form-label">{t('admin.password')}</label>
-                <input 
-                  type="password" 
+                <input
+                  type="password"
                   id="pass-input"
                   required
                   value={loginData.password}
@@ -361,13 +361,13 @@ export default function AdminPage() {
 
         {/* Tab Navigation */}
         <div className="tabs-nav">
-          <button 
+          <button
             className={`tab-btn ${activeTab === 'products' ? 'active' : ''}`}
             onClick={() => setActiveTab('products')}
           >
             {language === 'uz' ? 'Mahsulotlar Katalogi' : 'Каталог товаров'}
           </button>
-          <button 
+          <button
             className={`tab-btn ${activeTab === 'orders' ? 'active' : ''}`}
             onClick={() => setActiveTab('orders')}
           >
@@ -390,8 +390,8 @@ export default function AdminPage() {
                 <div className="form-group-row">
                   <div className="form-group">
                     <label htmlFor="name-uz-input">{t('admin.productNameUz')} *</label>
-                    <input 
-                      type="text" 
+                    <input
+                      type="text"
                       id="name-uz-input"
                       name="name_uz"
                       required
@@ -402,8 +402,8 @@ export default function AdminPage() {
                   </div>
                   <div className="form-group">
                     <label htmlFor="name-ru-input">{t('admin.productNameRu')} *</label>
-                    <input 
-                      type="text" 
+                    <input
+                      type="text"
                       id="name-ru-input"
                       name="name_ru"
                       required
@@ -416,7 +416,7 @@ export default function AdminPage() {
 
                 <div className="form-group">
                   <label htmlFor="desc-uz-input">{t('admin.productDescUz')}</label>
-                  <textarea 
+                  <textarea
                     id="desc-uz-input"
                     name="desc_uz"
                     value={productForm.desc_uz}
@@ -427,7 +427,7 @@ export default function AdminPage() {
 
                 <div className="form-group">
                   <label htmlFor="desc-ru-input">{t('admin.productDescRu')}</label>
-                  <textarea 
+                  <textarea
                     id="desc-ru-input"
                     name="desc_ru"
                     value={productForm.desc_ru}
@@ -439,8 +439,8 @@ export default function AdminPage() {
                 <div className="form-group-row">
                   <div className="form-group">
                     <label htmlFor="price-input">{t('admin.productPrice')} *</label>
-                    <input 
-                      type="number" 
+                    <input
+                      type="number"
                       id="price-input"
                       name="price"
                       required
@@ -451,8 +451,8 @@ export default function AdminPage() {
                   </div>
                   <div className="form-group">
                     <label htmlFor="old-price-input">{language === 'uz' ? 'Eski narx' : 'Старая цена'}</label>
-                    <input 
-                      type="number" 
+                    <input
+                      type="number"
                       id="old-price-input"
                       name="old_price"
                       value={productForm.old_price}
@@ -465,8 +465,8 @@ export default function AdminPage() {
                 <div className="form-group-row">
                   <div className="form-group">
                     <label htmlFor="stock-input">{t('admin.productStock')} *</label>
-                    <input 
-                      type="number" 
+                    <input
+                      type="number"
                       id="stock-input"
                       name="stock"
                       required
@@ -477,7 +477,7 @@ export default function AdminPage() {
                   </div>
                   <div className="form-group">
                     <label htmlFor="cat-select">{t('admin.category')}</label>
-                    <select 
+                    <select
                       id="cat-select"
                       name="category"
                       value={productForm.category}
@@ -503,8 +503,8 @@ export default function AdminPage() {
 
                 <div className="form-group">
                   <label htmlFor="img-input">{t('admin.image')}</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     id="img-input"
                     name="image_url"
                     value={productForm.image_url}
@@ -516,8 +516,8 @@ export default function AdminPage() {
 
                 <div className="form-group">
                   <label htmlFor="video-input">{language === 'uz' ? 'Video havolasi (YouTube)' : 'Ссылка на видео (YouTube)'}</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     id="video-input"
                     name="video_url"
                     value={productForm.video_url}
@@ -565,14 +565,14 @@ export default function AdminPage() {
                           <td>{prod.stock}</td>
                           <td>
                             <div className="actions-cell">
-                              <button 
-                                onClick={() => handleEditProduct(prod)} 
+                              <button
+                                onClick={() => handleEditProduct(prod)}
                                 className="action-link edit-link"
                               >
                                 {t('admin.editProduct')}
                               </button>
-                              <button 
-                                onClick={() => handleDeleteProduct(prod.id)} 
+                              <button
+                                onClick={() => handleDeleteProduct(prod.id)}
                                 className="action-link delete-link"
                               >
                                 {t('admin.deleteProduct')}

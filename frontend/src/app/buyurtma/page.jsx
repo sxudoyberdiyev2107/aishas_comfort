@@ -58,7 +58,7 @@ export default function CheckoutPage() {
 
     try {
       // Connect to Express backend API
-      const response = await fetch('http://localhost:5000/api/orders', {
+      const response = await fetch('https://aishascomfort-production.up.railway.app/api/orders', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -176,8 +176,8 @@ export default function CheckoutPage() {
 
               <div className="form-group">
                 <label htmlFor="name-input" className="form-label">{t('checkout.nameLabel')} *</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   id="name-input"
                   name="name"
                   value={formData.name}
@@ -190,8 +190,8 @@ export default function CheckoutPage() {
 
               <div className="form-group">
                 <label htmlFor="phone-input" className="form-label">{t('checkout.phoneLabel')} *</label>
-                <input 
-                  type="tel" 
+                <input
+                  type="tel"
                   id="phone-input"
                   name="phone"
                   value={formData.phone}
@@ -204,7 +204,7 @@ export default function CheckoutPage() {
 
               <div className="form-group">
                 <label htmlFor="address-input" className="form-label">{t('checkout.addressLabel')} *</label>
-                <textarea 
+                <textarea
                   id="address-input"
                   name="address"
                   value={formData.address}
@@ -216,8 +216,8 @@ export default function CheckoutPage() {
               </div>
 
               <div className="form-action">
-                <button 
-                  type="submit" 
+                <button
+                  type="submit"
                   disabled={isLoading || cartItems.length === 0}
                   className="btn-primary w-full btn-submit-order"
                 >
@@ -231,7 +231,7 @@ export default function CheckoutPage() {
           <div className="checkout-summary-col">
             <div className="checkout-summary-card">
               <h2 className="summary-title">{t('checkout.summaryTitle')}</h2>
-              
+
               {cartItems.length > 0 ? (
                 <>
                   <div className="summary-items-list">
