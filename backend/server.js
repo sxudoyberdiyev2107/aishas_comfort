@@ -10,7 +10,7 @@ const PORT = process.env.PORT || 5000;
 
 // Setup Middleware
 app.use(cors({
-  origin: 'http://localhost:3000', // Next.js frontend port
+  origin: ['http://localhost:3000', 'https://aishas-comfort.uz', 'https://www.aishas-comfort.uz'],
   credentials: true // allow sending secure cookies/tokens
 }));
 
