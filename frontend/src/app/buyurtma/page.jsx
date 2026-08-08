@@ -76,6 +76,9 @@ export default function CheckoutPage() {
             // Tanlangan rang nomi (rangsiz mahsulotda null)
             color_name_uz: item.color_name_uz || null,
             color_name_ru: item.color_name_ru || null,
+            // Telegram xabariga rasm qo'shish uchun (rangli mahsulotda
+            // bu tanlangan rangning rasmi bo'ladi)
+            image_url: item.image_url || null,
             quantity: item.quantity,
             price: item.price
           }))

@@ -308,6 +308,129 @@ router.get('/categories', async (req, res) => {
 // 2. CHECKOUT & ORDERS ROUTE
 // ==========================================
 
+// Rasmlar ikki xil joyda turadi:
+//   /uploads/...  -> backend serveri (admin yuklagan rasmlar)
+//   boshqa yo'llar -> frontend/public (eski katalog rasmlari)
+const PUBLIC_BACKEND_URL = (process.env.PUBLIC_BACKEND_URL || 'https://aishascomfort-production.up.railway.app').replace(/\/+$/, '');
+const PUBLIC_FRONTEND_URL = (process.env.PUBLIC_FRONTEND_URL || 'https://www.aishas-comfort.uz').replace(/\/+$/, '');
+
+const TELEGRAM_CAPTION_LIMIT = 1024;
+
+// HTML rejimida maxsus belgilarni himoyalash.
+// Markdown emas, HTML ishlatilishining sababi: mahsulot nomidagi
+// _ yoki * belgisi Markdown'da butun xabarni buzib yuboradi va
+// hech qanday xabar kelmay qoladi. HTML'da kvadrat qavs ham oddiy belgi.
+const escapeHtml = (value) => String(value ?? '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;');
+
+const formatMoney = (value) => Number(value || 0).toLocaleString('en-US');
+
+const truncate = (text, limit) => (text.length <= limit ? text : `${text.slice(0, limit - 1)}…`);
+
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Savatchadan kelgan rasm manzilini to'liq ochiq URL ga aylantirish.
+//
+// XAVFSIZLIK: bu manzil mijoz brauzeridan keladi, shuning uchun faqat
+// ICHKI yo'llar (bitta "/" bilan boshlanadigan) qabul qilinadi.
+// Aks holda kimdir buyurtma so'roviga tashqi manzil yozib, sizning
+// Telegramingizga istalgan rasmni yuborishi mumkin bo'lardi.
+function buildPublicImageUrl(imagePath) {
+  if (typeof imagePath !== 'string') return null;
+
+  const trimmed = imagePath.trim();
+  if (!trimmed.startsWith('/')) return null;   // http://, data:, nisbiy yo'l
+  if (trimmed.startsWith('//')) return null;   // //boshqa-sayt.com
+  if (trimmed.includes('\\')) return null;
+
+  const base = trimmed.startsWith('/uploads/') ? PUBLIC_BACKEND_URL : PUBLIC_FRONTEND_URL;
+  // encodeURI bo'sh joy kabi belgilarni to'g'rilaydi, "/" ga tegmaydi
+  return `${base}${encodeURI(trimmed)}`;
+}
+
+// Buyurtmaning umumiy xabari (birinchi bo'lib yuboriladi)
+function buildOrderSummaryMessage(order) {
+  const totalUnits = order.items.reduce((sum, it) => sum + Number(it.quantity || 0), 0);
+
+  return [
+    `🔔 <b>YANGI BUYURTMA! / НОВЫЙ ЗАКАЗ!</b> (ID: #${escapeHtml(order.orderId)})`,
+    '',
+    `👤 <b>Mijoz / Клиент:</b> ${escapeHtml(order.customer_name)}`,
+    `📞 <b>Telefon / Телефон:</b> ${escapeHtml(order.phone_number)}`,
+    `📍 <b>Manzil / Адрес:</b> ${escapeHtml(order.delivery_address)}`,
+    '',
+    `📦 <b>Mahsulot / Товары:</b> ${order.items.length} xil, ${totalUnits} dona`,
+    `💰 <b>Jami / Итого:</b> <b>${formatMoney(order.total_price)} so'm/сум</b>`,
+    '',
+    '⬇️ Har bir mahsulot alohida xabarda / Каждый товар отдельным сообщением'
+  ].join('\n');
+}
+
+// Bitta mahsulotning xabari (rasm izohi sifatida ham ishlatiladi)
+function buildOrderItemMessage(item, index, totalCount) {
+  const colorUz = item.color_name_uz ? ` (${item.color_name_uz})` : '';
+  const colorRu = item.color_name_ru ? ` (${item.color_name_ru})` : '';
+  const lineTotal = Number(item.price || 0) * Number(item.quantity || 0);
+
+  return [
+    `<b>${index + 1}/${totalCount}</b>`,
+    `<b>${escapeHtml(item.name_uz)}${escapeHtml(colorUz)}</b> [ID: ${escapeHtml(item.product_id)}]`,
+    `${escapeHtml(item.name_ru)}${escapeHtml(colorRu)}`,
+    `${escapeHtml(item.quantity)} dona × ${formatMoney(item.price)} = <b>${formatMoney(lineTotal)} so'm</b>`
+  ].join('\n');
+}
+
+// Buyurtma haqida Telegramga xabar berish.
+//
+// Bu funksiya buyurtma javobini KUTMAYDI — mijoz darhol javob oladi,
+// xabarlar orqa fonda ketadi. Shuning uchun bu yerdagi hech qanday
+// xato buyurtmaning saqlanishiga ta'sir qilmaydi.
+async function sendOrderNotification(order) {
+  const summary = buildOrderSummaryMessage(order);
+
+  if (!bot || !TELEGRAM_CHAT_ID) {
+    console.log('Telegram bot not configured. Logging notification locally:\n', summary);
+    return;
+  }
+
+  try {
+    await bot.sendMessage(TELEGRAM_CHAT_ID, summary, { parse_mode: 'HTML' });
+  } catch (err) {
+    console.error('Telegram: umumiy xabar yuborilmadi:', err.message);
+  }
+
+  for (let i = 0; i < order.items.length; i++) {
+    const item = order.items[i];
+    const caption = truncate(buildOrderItemMessage(item, i, order.items.length), TELEGRAM_CAPTION_LIMIT);
+    const photoUrl = buildPublicImageUrl(item.image_url);
+
+    try {
+      if (photoUrl) {
+        await bot.sendPhoto(TELEGRAM_CHAT_ID, photoUrl, { caption, parse_mode: 'HTML' });
+      } else {
+        // Rasmi yo'q mahsulot — faqat matn
+        await bot.sendMessage(TELEGRAM_CHAT_ID, caption, { parse_mode: 'HTML' });
+      }
+    } catch (err) {
+      // Telegram rasmni yuklab ololmadi (fayl o'chgan, hajmi katta va h.k.)
+      // Ma'lumot yo'qolmasligi uchun o'sha matnni oddiy xabar qilib yuboramiz.
+      console.error(`Telegram: "${item.name_uz}" rasmi yuborilmadi:`, err.message);
+      try {
+        await bot.sendMessage(TELEGRAM_CHAT_ID, caption, { parse_mode: 'HTML' });
+      } catch (fallbackErr) {
+        console.error('Telegram: zaxira matnli xabar ham yuborilmadi:', fallbackErr.message);
+      }
+    }
+
+    // Telegram bir chatga tez ketma-ket yuborishni cheklaydi
+    if (i < order.items.length - 1) {
+      await sleep(400);
+    }
+  }
+}
+
 // POST place order
 router.post('/orders', async (req, res) => {
   const { customer_name, phone_number, delivery_address, total_price, items } = req.body;
@@ -354,36 +477,16 @@ router.post('/orders', async (req, res) => {
   saveMockOrders(mockOrders);
 
   // C. Send Automatic Telegram Notification
-  // Rang tanlangan bo'lsa nom yonida qavs ichida ko'rsatiladi,
-  // rangsiz mahsulotda qavs umuman chiqmaydi
-  const colorSuffix = (colorName) => (colorName ? ` (${colorName})` : '');
-
-  const formattedItemsUz = items.map(it => `- *${it.name_uz}${colorSuffix(it.color_name_uz)}* (${it.quantity} dona) - ${(it.price * it.quantity).toLocaleString()} so'm`).join('\n');
-  const formattedItemsRu = items.map(it => `- *${it.name_ru}${colorSuffix(it.color_name_ru)}* (${it.quantity} шт) - ${(it.price * it.quantity).toLocaleString()} сум`).join('\n');
-
-  const mdMessage = `
-🔔 *YANGI BUYURTMA! / НОВЫЙ ЗАКАЗ!* (ID: #${orderId})
-  
-👤 *Mijoz / Клиент:* ${customer_name}
-📞 *Telefon / Телефон:* ${phone_number}
-📍 *Manzil / Адрес:* ${delivery_address}
-
-📦 *Mahsulotlar (UZ):*
-${formattedItemsUz}
-
-📦 *Товары (RU):*
-${formattedItemsRu}
-
-💰 *Jami Summa / Итого:* *${parseFloat(total_price).toLocaleString()} so'm/сум*
-`;
-
-  if (bot && TELEGRAM_CHAT_ID) {
-    bot.sendMessage(TELEGRAM_CHAT_ID, mdMessage, { parse_mode: 'Markdown' })
-      .then(() => console.log('Telegram order notification dispatched successfully.'))
-      .catch((err) => console.error('Telegram notification failed:', err.message));
-  } else {
-    console.log('Telegram bot not configured. Logging notification locally:\n', mdMessage);
-  }
+  // Ataylab kutilmaydi (await yo'q): mijoz javobni darhol olishi kerak,
+  // xabarlar orqa fonda ketaveradi
+  sendOrderNotification({
+    orderId,
+    customer_name,
+    phone_number,
+    delivery_address,
+    total_price,
+    items
+  }).catch(err => console.error('Telegram xabarnomasida kutilmagan xato:', err.message));
 
   return res.status(201).json({
     success: true,
