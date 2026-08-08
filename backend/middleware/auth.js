@@ -1,7 +1,5 @@
 const jwt = require('jsonwebtoken');
-require('dotenv').config();
-
-const JWT_SECRET = process.env.JWT_SECRET || 'aishas_comfort_secure_secret_key_123';
+const { JWT_SECRET } = require('../config/jwt');
 
 module.exports = function authMiddleware(req, res, next) {
   // Read token from cookies (requires cookie-parser)

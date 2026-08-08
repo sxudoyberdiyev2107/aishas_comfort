@@ -8,7 +8,7 @@ const authMiddleware = require('../middleware/auth');
 
 require('dotenv').config();
 
-const JWT_SECRET = process.env.JWT_SECRET || 'aishas_comfort_secure_secret_key_123';
+const { JWT_SECRET } = require('../config/jwt');
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
