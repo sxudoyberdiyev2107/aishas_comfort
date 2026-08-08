@@ -227,17 +227,6 @@ export default function ProductDetailPage({ params }) {
 
           <p className="detail-desc">{desc}</p>
 
-          <div className="detail-stock-status">
-            <span>
-              {language === 'uz' ? 'Holati:' : 'Статус:'}{' '}
-              <strong className={product.in_stock ? 'in-stock' : 'out-of-stock'}>
-                {product.in_stock
-                  ? (language === 'uz' ? 'Mavjud' : 'В наличии')
-                  : (language === 'uz' ? 'Tugagan' : 'Нет в наличии')}
-              </strong>
-            </span>
-          </div>
-
           <div className="purchase-controls">
             {/* Quantity selector */}
             <div className="quantity-selector">
@@ -245,7 +234,6 @@ export default function ProductDetailPage({ params }) {
                 onClick={decrementQty}
                 className="qty-btn"
                 aria-label="Decrease quantity"
-                disabled={!product.in_stock}
               >
                 -
               </button>
@@ -254,7 +242,6 @@ export default function ProductDetailPage({ params }) {
                 onClick={incrementQty}
                 className="qty-btn"
                 aria-label="Increase quantity"
-                disabled={!product.in_stock}
               >
                 +
               </button>
@@ -263,12 +250,10 @@ export default function ProductDetailPage({ params }) {
             {/* Add To Cart Button */}
             <button
               onClick={handleAddToCart}
-              disabled={isAdding || !product.in_stock}
+              disabled={isAdding}
               className={`btn-primary btn-detail-cart ${isAdding ? 'adding' : ''}`}
             >
-              {!product.in_stock
-                ? (language === 'uz' ? 'Tugagan' : 'Нет в наличии')
-                : (isAdding ? t('products.added') : t('products.addToCart'))}
+              {isAdding ? t('products.added') : t('products.addToCart')}
             </button>
           </div>
         </div>
@@ -415,19 +400,6 @@ export default function ProductDetailPage({ params }) {
           font-size: 15px;
           color: var(--secondary-text);
           line-height: 1.6;
-        }
-
-        .detail-stock-status {
-          font-size: 14px;
-          color: var(--primary-text);
-        }
-
-        .in-stock {
-          color: #2e7d32;
-        }
-
-        .out-of-stock {
-          color: #c62828;
         }
 
         /* Purchase Controls */

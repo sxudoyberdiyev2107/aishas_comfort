@@ -147,13 +147,17 @@ const isAdminRequest = (req) => {
   return false;
 };
 
+// Saytga chiqadigan mahsulotdan ichki maydonlarni olib tashlaymiz.
+// stock (zaxira) hisobi yuritilmaydi, shuning uchun u tashqariga
+// umuman chiqmaydi.
 const sanitizeProductForPublic = (product) => {
   const { stock, ...publicProduct } = product;
-  return {
-    ...publicProduct,
-    in_stock: stock > 0
-  };
+  return publicProduct;
 };
+
+// Saytda mahsulot ko'rinadimi? Yashirilgan va arxivlanganlar chiqmaydi.
+// (zaxira ro'yxatdagi eski yozuvlarda bu maydonlar yo'q — ular ko'rinadi)
+const isPubliclyVisible = (product) => !product.is_hidden && !product.is_archived;
 
 // Mahsulotlarni bazadan o'qish uchun umumiy SELECT.
 // Bazada faqat category_id (raqam) saqlanadi, sayt esa category
@@ -185,10 +189,19 @@ async function resolveCategoryId(categorySlug) {
 
 // GET all products
 router.get('/products', async (req, res) => {
+  const isAdmin = isAdminRequest(req);
+
   try {
-    const result = await db.query(`${PRODUCT_SELECT} ORDER BY p.id DESC`);
+    // Admin hamma mahsulotni ko'radi — yashirilgan va arxivlanganlarni ham,
+    // chunki ularni admin panelda boshqarishi kerak.
+    // Saytga esa faqat ochiq mahsulotlar chiqadi.
+    const sql = isAdmin
+      ? `${PRODUCT_SELECT} ORDER BY p.id DESC`
+      : `${PRODUCT_SELECT} WHERE p.is_hidden = FALSE AND p.is_archived = FALSE ORDER BY p.id DESC`;
+
+    const result = await db.query(sql);
     let productsList = result.rows;
-    if (!isAdminRequest(req)) {
+    if (!isAdmin) {
       productsList = productsList.map(sanitizeProductForPublic);
     }
     res.json(productsList);
@@ -196,8 +209,8 @@ router.get('/products', async (req, res) => {
     // Graceful fallback to mock data
     console.warn('Database error, falling back to mock products:', err.message);
     let productsList = mockProducts;
-    if (!isAdminRequest(req)) {
-      productsList = productsList.map(sanitizeProductForPublic);
+    if (!isAdmin) {
+      productsList = productsList.filter(isPubliclyVisible).map(sanitizeProductForPublic);
     }
     res.json(productsList);
   }
@@ -206,11 +219,19 @@ router.get('/products', async (req, res) => {
 // GET single product by ID
 router.get('/products/:id', async (req, res) => {
   const { id } = req.params;
+  const isAdmin = isAdminRequest(req);
+
   try {
-    const result = await db.query(`${PRODUCT_SELECT} WHERE p.id = $1`, [id]);
+    // Yashirilgan/arxivlangan mahsulot sahifasi saytda ochilmasin —
+    // to'g'ridan-to'g'ri havola bilan kirilsa ham "topilmadi" chiqadi.
+    const sql = isAdmin
+      ? `${PRODUCT_SELECT} WHERE p.id = $1`
+      : `${PRODUCT_SELECT} WHERE p.id = $1 AND p.is_hidden = FALSE AND p.is_archived = FALSE`;
+
+    const result = await db.query(sql, [id]);
     if (result.rows.length > 0) {
       let product = result.rows[0];
-      if (!isAdminRequest(req)) {
+      if (!isAdmin) {
         product = sanitizeProductForPublic(product);
       }
       res.json(product);
@@ -220,11 +241,8 @@ router.get('/products/:id', async (req, res) => {
   } catch (err) {
     console.warn('Database error, falling back to mock product search:', err.message);
     const prod = mockProducts.find(p => p.id === parseInt(id));
-    if (prod) {
-      let product = prod;
-      if (!isAdminRequest(req)) {
-        product = sanitizeProductForPublic(product);
-      }
+    if (prod && (isAdmin || isPubliclyVisible(prod))) {
+      const product = isAdmin ? prod : sanitizeProductForPublic(prod);
       res.json(product);
     } else {
       res.status(404).json({ message: 'Product not found' });
@@ -275,11 +293,6 @@ router.post('/orders', async (req, res) => {
       await db.query(
         'INSERT INTO order_items (order_id, product_id, quantity, price) VALUES ($1, $2, $3, $4)',
         [orderId, item.product_id, item.quantity, item.price]
-      );
-      // Reduce product stock levels
-      await db.query(
-        'UPDATE products SET stock = stock - $1 WHERE id = $2 AND stock >= $1',
-        [item.quantity, item.product_id]
       );
     }
     dbSuccess = true;
@@ -442,7 +455,7 @@ router.get('/orders', authMiddleware, async (req, res) => {
 
 // POST create product
 router.post('/products', authMiddleware, async (req, res) => {
-  const { name_uz, name_ru, desc_uz, desc_ru, price, old_price, stock, category, image_url, video_url } = req.body;
+  const { name_uz, name_ru, desc_uz, desc_ru, price, old_price, category, image_url, video_url } = req.body;
   const slug = (name_uz || 'product').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') + '-' + Date.now();
 
   try {
@@ -450,8 +463,8 @@ router.post('/products', authMiddleware, async (req, res) => {
     const categoryId = await resolveCategoryId(category);
 
     const result = await db.query(
-      'INSERT INTO products (category_id, slug, name_uz, name_ru, desc_uz, desc_ru, price, old_price, stock, image_url, video_url) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *',
-      [categoryId, slug, name_uz, name_ru, desc_uz, desc_ru, price, old_price, stock, image_url, video_url]
+      'INSERT INTO products (category_id, slug, name_uz, name_ru, desc_uz, desc_ru, price, old_price, image_url, video_url) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *',
+      [categoryId, slug, name_uz, name_ru, desc_uz, desc_ru, price, old_price, image_url, video_url]
     );
 
     // Javobga kategoriya slug'ini ham qo'shamiz (bazadan faqat
@@ -475,11 +488,12 @@ router.post('/products', authMiddleware, async (req, res) => {
       desc_ru,
       price,
       old_price,
-      stock,
       image_url,
       video_url: video_url || '',
       is_new: true,
-      is_bestseller: false
+      is_bestseller: false,
+      is_hidden: false,
+      is_archived: false
     };
     mockProducts.unshift(newProduct);
     saveMockProducts(mockProducts);
@@ -490,14 +504,14 @@ router.post('/products', authMiddleware, async (req, res) => {
 // PUT update product
 router.put('/products/:id', authMiddleware, async (req, res) => {
   const { id } = req.params;
-  const { name_uz, name_ru, desc_uz, desc_ru, price, old_price, stock, category, image_url, video_url } = req.body;
+  const { name_uz, name_ru, desc_uz, desc_ru, price, old_price, category, image_url, video_url } = req.body;
 
   try {
     const categoryId = await resolveCategoryId(category);
 
     const result = await db.query(
-      'UPDATE products SET category_id = $1, name_uz = $2, name_ru = $3, desc_uz = $4, desc_ru = $5, price = $6, old_price = $7, stock = $8, image_url = $9, video_url = $11 WHERE id = $10 RETURNING *',
-      [categoryId, name_uz, name_ru, desc_uz, desc_ru, price, old_price, stock, image_url, id, video_url]
+      'UPDATE products SET category_id = $1, name_uz = $2, name_ru = $3, desc_uz = $4, desc_ru = $5, price = $6, old_price = $7, image_url = $8, video_url = $9 WHERE id = $10 RETURNING *',
+      [categoryId, name_uz, name_ru, desc_uz, desc_ru, price, old_price, image_url, video_url, id]
     );
 
     if (result.rows.length > 0) {
@@ -526,7 +540,6 @@ router.put('/products/:id', authMiddleware, async (req, res) => {
         desc_ru,
         price,
         old_price,
-        stock,
         image_url,
         video_url: video_url || ''
       };
@@ -535,6 +548,59 @@ router.put('/products/:id', authMiddleware, async (req, res) => {
     } else {
       res.status(404).json({ message: 'Product not found' });
     }
+  }
+});
+
+// PATCH mahsulot holati — yashirish / ko'rsatish / arxivlash / qaytarish
+//
+// So'rov tanasida is_hidden va/yoki is_archived yuboriladi (true/false).
+// Faqat yuborilgan maydon o'zgaradi, qolganiga tegilmaydi.
+router.patch('/products/:id/status', authMiddleware, async (req, res) => {
+  const { id } = req.params;
+  const { is_hidden, is_archived } = req.body;
+
+  // Nima o'zgartirishni SQL'ga dinamik yig'amiz
+  const updates = [];
+  const values = [];
+
+  if (typeof is_hidden === 'boolean') {
+    values.push(is_hidden);
+    updates.push(`is_hidden = $${values.length}`);
+  }
+  if (typeof is_archived === 'boolean') {
+    values.push(is_archived);
+    updates.push(`is_archived = $${values.length}`);
+  }
+
+  if (updates.length === 0) {
+    return res.status(400).json({
+      message: 'is_hidden yoki is_archived maydonlaridan kamida bittasi kerak (true/false)'
+    });
+  }
+
+  values.push(id);
+
+  try {
+    const result = await db.query(
+      `UPDATE products SET ${updates.join(', ')} WHERE id = $${values.length} RETURNING *`,
+      values
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Product not found' });
+    }
+
+    // Zaxira ro'yxatni ham bir xil holatda ushlab turamiz
+    const idx = mockProducts.findIndex(p => p.id === parseInt(id));
+    if (idx > -1) {
+      mockProducts[idx] = { ...mockProducts[idx], ...result.rows[0] };
+      saveMockProducts(mockProducts);
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Mahsulot holatini o\'zgartirishda xato:', err.message);
+    res.status(500).json({ message: 'Mahsulot holatini o\'zgartirib bo\'lmadi' });
   }
 });
 

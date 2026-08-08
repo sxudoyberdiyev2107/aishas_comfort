@@ -34,7 +34,6 @@ export default function AdminPage() {
     desc_ru: '',
     price: '',
     old_price: '',
-    stock: '',
     category: 'parta-stullar',
     image_url: '',
     video_url: ''
@@ -69,7 +68,9 @@ export default function AdminPage() {
   const fetchDashboardData = async () => {
     try {
       // Fetch Products
-      const prodRes = await fetch(`${backendUrl}/products`);
+      // credentials: 'include' MUHIM — shu cookie orqali server bizni
+      // admin deb taniydi va yashirilgan/arxivlangan mahsulotlarni ham beradi
+      const prodRes = await fetch(`${backendUrl}/products`, { credentials: 'include' });
       if (prodRes.ok) {
         const prodData = await prodRes.json();
         setProducts(prodData);
@@ -226,8 +227,7 @@ export default function AdminPage() {
         body: JSON.stringify({
           ...productForm,
           price: parseFloat(productForm.price),
-          old_price: productForm.old_price ? parseFloat(productForm.old_price) : null,
-          stock: parseInt(productForm.stock)
+          old_price: productForm.old_price ? parseFloat(productForm.old_price) : null
         }),
         credentials: 'include'
       });
@@ -282,6 +282,39 @@ export default function AdminPage() {
     }
   };
 
+  // 6b. Mahsulot holatini o'zgartirish (yashirish / arxivlash)
+  //
+  // changes — masalan { is_hidden: true } yoki { is_archived: false }.
+  // Faqat yuborilgan maydon o'zgaradi.
+  const handleStatusChange = async (id, changes, successMessage) => {
+    setCrudError('');
+    setCrudSuccess('');
+    try {
+      const res = await fetch(`${backendUrl}/products/${id}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(changes),
+        credentials: 'include'
+      });
+
+      if (res.status === 401 || res.status === 403) {
+        setIsAuthenticated(false);
+        return;
+      }
+
+      if (res.ok) {
+        setCrudSuccess(successMessage);
+        fetchDashboardData();
+      } else {
+        setCrudError(language === 'uz'
+          ? 'Mahsulot holatini o\'zgartirib bo\'lmadi.'
+          : 'Не удалось изменить статус товара.');
+      }
+    } catch (err) {
+      setCrudError('Server connection error.');
+    }
+  };
+
   // 7. Load Product into Form for Edit
   const handleEditProduct = (prod) => {
     setIsEditing(true);
@@ -294,7 +327,6 @@ export default function AdminPage() {
       desc_ru: prod.desc_ru || '',
       price: prod.price || '',
       old_price: prod.old_price || '',
-      stock: prod.stock || '',
       category: prod.category || 'parta-stullar',
       image_url: prod.image_url || '',
       video_url: prod.video_url || ''
@@ -312,12 +344,16 @@ export default function AdminPage() {
       desc_ru: '',
       price: '',
       old_price: '',
-      stock: '',
       category: 'parta-stullar',
       image_url: '',
       video_url: ''
     });
   };
+
+  // Katalog va Arxiv ro'yxatlari.
+  // Arxivlangan mahsulot asosiy katalogda ko'rinmaydi, faqat "Arxiv"da.
+  const activeProducts = products.filter(p => !p.is_archived);
+  const archivedProducts = products.filter(p => p.is_archived);
 
   if (authLoading) {
     return (
@@ -460,6 +496,12 @@ export default function AdminPage() {
           >
             {t('admin.ordersTitle')} ({orders.length})
           </button>
+          <button
+            className={`tab-btn ${activeTab === 'archive' ? 'active' : ''}`}
+            onClick={() => setActiveTab('archive')}
+          >
+            {language === 'uz' ? 'Arxiv' : 'Архив'} ({archivedProducts.length})
+          </button>
         </div>
 
         {crudError && <div className="error-banner">{crudError}</div>}
@@ -550,18 +592,6 @@ export default function AdminPage() {
                 </div>
 
                 <div className="form-group-row">
-                  <div className="form-group">
-                    <label htmlFor="stock-input">{t('admin.productStock')} *</label>
-                    <input
-                      type="number"
-                      id="stock-input"
-                      name="stock"
-                      required
-                      value={productForm.stock}
-                      onChange={handleFormChange}
-                      className="form-input"
-                    />
-                  </div>
                   <div className="form-group">
                     <label htmlFor="cat-select">{t('admin.category')}</label>
                     <select
@@ -668,12 +698,120 @@ export default function AdminPage() {
                       <th>{language === 'uz' ? 'Rasm' : 'Фото'}</th>
                       <th>{language === 'uz' ? 'Nomi' : 'Название'}</th>
                       <th>{t('admin.productPrice')}</th>
-                      <th>{t('admin.productStock')}</th>
+                      <th>{language === 'uz' ? 'Holati' : 'Статус'}</th>
                       <th>{t('admin.actionColumn')}</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {products.map(prod => {
+                    {activeProducts.map(prod => {
+                      const name = language === 'uz' ? prod.name_uz : prod.name_ru;
+                      return (
+                        <tr key={prod.id} className={prod.is_hidden ? 'row-hidden' : ''}>
+                          <td>{prod.id}</td>
+                          <td>
+                            {prod.image_url ? (
+                              <img
+                                src={getImageSrc(prod.image_url)}
+                                alt=""
+                                className="table-thumb"
+                              />
+                            ) : (
+                              <span className="text-secondary">—</span>
+                            )}
+                          </td>
+                          <td className="font-medium">{name}</td>
+                          <td>{parseFloat(prod.price).toLocaleString()} {t('products.priceCurrency')}</td>
+                          <td>
+                            {prod.is_hidden ? (
+                              <span className="status-badge status-hidden">
+                                {language === 'uz' ? 'Yashirilgan' : 'Скрыт'}
+                              </span>
+                            ) : (
+                              <span className="status-badge status-visible">
+                                {language === 'uz' ? 'Saytda' : 'На сайте'}
+                              </span>
+                            )}
+                          </td>
+                          <td>
+                            <div className="actions-cell">
+                              <button
+                                onClick={() => handleEditProduct(prod)}
+                                className="action-link edit-link"
+                              >
+                                {t('admin.editProduct')}
+                              </button>
+                              <button
+                                onClick={() => handleStatusChange(
+                                  prod.id,
+                                  { is_hidden: !prod.is_hidden },
+                                  prod.is_hidden
+                                    ? (language === 'uz' ? 'Mahsulot saytda ko\'rinadigan bo\'ldi.' : 'Товар снова виден на сайте.')
+                                    : (language === 'uz' ? 'Mahsulot saytdan yashirildi.' : 'Товар скрыт с сайта.')
+                                )}
+                                className="action-link hide-link"
+                              >
+                                {prod.is_hidden
+                                  ? (language === 'uz' ? 'Ko\'rsatish' : 'Показать')
+                                  : (language === 'uz' ? 'Yashirish' : 'Скрыть')}
+                              </button>
+                              <button
+                                onClick={() => handleStatusChange(
+                                  prod.id,
+                                  { is_archived: true },
+                                  language === 'uz' ? 'Mahsulot arxivga o\'tkazildi.' : 'Товар перемещен в архив.'
+                                )}
+                                className="action-link archive-link"
+                              >
+                                {language === 'uz' ? 'Arxivlash' : 'В архив'}
+                              </button>
+                              <button
+                                onClick={() => handleDeleteProduct(prod.id)}
+                                className="action-link delete-link"
+                              >
+                                {t('admin.deleteProduct')}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 3: ARXIV */}
+        {activeTab === 'archive' && (
+          <div className="orders-panel">
+            <h2 className="panel-title">
+              {language === 'uz' ? 'Arxivlangan mahsulotlar' : 'Архивированные товары'}
+            </h2>
+            <p className="archive-hint">
+              {language === 'uz'
+                ? 'Bu mahsulotlar saytda ko\'rinmaydi. Istalgan payt katalogga qaytarishingiz mumkin.'
+                : 'Эти товары не видны на сайте. Вы можете вернуть их в каталог в любой момент.'}
+            </p>
+
+            {archivedProducts.length === 0 ? (
+              <p className="text-secondary">
+                {language === 'uz' ? 'Arxiv bo\'sh.' : 'Архив пуст.'}
+              </p>
+            ) : (
+              <div className="table-responsive">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>{language === 'uz' ? 'Rasm' : 'Фото'}</th>
+                      <th>{language === 'uz' ? 'Nomi' : 'Название'}</th>
+                      <th>{t('admin.productPrice')}</th>
+                      <th>{t('admin.actionColumn')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {archivedProducts.map(prod => {
                       const name = language === 'uz' ? prod.name_uz : prod.name_ru;
                       return (
                         <tr key={prod.id}>
@@ -691,14 +829,17 @@ export default function AdminPage() {
                           </td>
                           <td className="font-medium">{name}</td>
                           <td>{parseFloat(prod.price).toLocaleString()} {t('products.priceCurrency')}</td>
-                          <td>{prod.stock}</td>
                           <td>
                             <div className="actions-cell">
                               <button
-                                onClick={() => handleEditProduct(prod)}
+                                onClick={() => handleStatusChange(
+                                  prod.id,
+                                  { is_archived: false },
+                                  language === 'uz' ? 'Mahsulot katalogga qaytarildi.' : 'Товар возвращен в каталог.'
+                                )}
                                 className="action-link edit-link"
                               >
-                                {t('admin.editProduct')}
+                                {language === 'uz' ? 'Katalogga qaytarish' : 'Вернуть в каталог'}
                               </button>
                               <button
                                 onClick={() => handleDeleteProduct(prod.id)}
@@ -714,7 +855,7 @@ export default function AdminPage() {
                   </tbody>
                 </table>
               </div>
-            </div>
+            )}
           </div>
         )}
 
@@ -1076,6 +1217,7 @@ export default function AdminPage() {
         .actions-cell {
           display: flex;
           gap: 16px;
+          flex-wrap: wrap;
         }
 
         .action-link {
@@ -1098,6 +1240,46 @@ export default function AdminPage() {
 
         .delete-link:hover {
           color: #b71c1c;
+        }
+
+        .hide-link,
+        .archive-link {
+          color: var(--secondary-text);
+        }
+
+        .hide-link:hover,
+        .archive-link:hover {
+          color: var(--primary-dark);
+        }
+
+        /* Yashirilgan mahsulot qatori xiraroq ko'rinadi */
+        .row-hidden {
+          opacity: 0.55;
+        }
+
+        .status-badge {
+          display: inline-block;
+          font-size: 11px;
+          font-weight: 700;
+          padding: 3px 8px;
+          border-radius: 3px;
+          white-space: nowrap;
+        }
+
+        .status-visible {
+          background-color: #e8f5e9;
+          color: #2e7d32;
+        }
+
+        .status-hidden {
+          background-color: #fff3e0;
+          color: #ef6c00;
+        }
+
+        .archive-hint {
+          font-size: 13px;
+          color: var(--secondary-text);
+          margin-bottom: 16px;
         }
 
         .order-items-bullet {
