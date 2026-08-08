@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '../context/LanguageContext';
+import { getImageSrc } from '../lib/imageUrl';
 
 export default function ProductCard({ product }) {
   const { language, t } = useLanguage();
@@ -61,7 +62,7 @@ export default function ProductCard({ product }) {
         <div className="product-image-container">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img 
-            src={product.image_url || '/placeholder.jpg'} 
+            src={getImageSrc(product.image_url) || '/placeholder.jpg'}
             alt={name} 
             className="product-image"
             loading="lazy"

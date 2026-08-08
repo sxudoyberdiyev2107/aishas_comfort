@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useLanguage } from '../../context/LanguageContext';
+import { getImageSrc } from '../../lib/imageUrl';
 
 export default function AdminPage() {
   const { t, language } = useLanguage();
@@ -40,16 +41,6 @@ export default function AdminPage() {
   });
 
   const backendUrl = 'https://aishascomfort-production.up.railway.app/api';
-  // Backend'ning asosiy manzili (/api'siz) - yuklangan rasmlarni ko'rsatish uchun
-  const serverUrl = backendUrl.replace(/\/api$/, '');
-
-  // Rasm manzilini to'liq ko'rinishga aylantirish
-  const getImageSrc = (url) => {
-    if (!url) return '';
-    if (url.startsWith('http://') || url.startsWith('https://')) return url;
-    if (url.startsWith('/uploads/')) return `${serverUrl}${url}`;
-    return url; // eski rasmlar (frontend/public ichida)
-  };
 
   // 1. Verify Auth session on load
   useEffect(() => {

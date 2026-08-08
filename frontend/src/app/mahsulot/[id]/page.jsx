@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useLanguage } from '../../../context/LanguageContext';
+import { getImageSrc } from '../../../lib/imageUrl';
 
 const getYouTubeEmbedUrl = (url) => {
   if (!url) return null;
@@ -164,7 +165,7 @@ export default function ProductDetailPage({ params }) {
           <div className="detail-image-wrapper">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={product.image_url}
+              src={getImageSrc(product.image_url)}
               alt={name}
               className="detail-image"
             />

@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useLanguage } from '../../context/LanguageContext';
+import { getImageSrc } from '../../lib/imageUrl';
 
 export default function CartPage() {
   const { t, language } = useLanguage();
@@ -70,7 +71,7 @@ export default function CartPage() {
                       <div className="item-details">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img 
-                          src={item.image_url} 
+                          src={getImageSrc(item.image_url)}
                           alt={name} 
                           className="item-image"
                         />
