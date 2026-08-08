@@ -353,6 +353,33 @@ function sanitizeInternalImagePath(imagePath) {
   return trimmed;
 }
 
+// Telefon raqamini bitta ko'rinishga keltirish: +998XXXXXXXXX
+//
+// Brauzerdagi tekshiruvni chetlab o'tish mumkin (to'g'ridan-to'g'ri
+// so'rov yuborish orqali), shuning uchun server ham tekshiradi.
+// Mos kelmasa null qaytadi va buyurtma rad etiladi.
+//
+// Operator kodlari ro'yxati ataylab tekshirilmaydi: yangi kodlar
+// chiqib turadi va eskirgan ro'yxat haqiqiy mijozni rad qilib qo'yardi.
+function normalizePhoneNumber(raw) {
+  if (typeof raw !== 'string' && typeof raw !== 'number') return null;
+
+  let digits = String(raw).replace(/\D/g, '');
+  if (digits.startsWith('00')) digits = digits.slice(2);   // 00998... -> 998...
+  if (digits.length === 9) digits = `998${digits}`;        // 901234567 -> 998901234567
+
+  if (!/^998\d{9}$/.test(digits)) return null;
+  return `+${digits}`;
+}
+
+// +998901234567 -> "+998 90 123 45 67"
+// Telegramda raqamni o'qish va bosib qo'ng'iroq qilish oson bo'lishi uchun
+function formatPhoneForDisplay(phone) {
+  const match = /^\+998(\d{2})(\d{3})(\d{2})(\d{2})$/.exec(String(phone || ''));
+  if (!match) return String(phone || '');
+  return `+998 ${match[1]} ${match[2]} ${match[3]} ${match[4]}`;
+}
+
 // Ichki yo'lni to'liq ochiq URL ga aylantirish (Telegram uchun)
 function buildPublicImageUrl(imagePath) {
   const safePath = sanitizeInternalImagePath(imagePath);
@@ -371,7 +398,7 @@ function buildOrderSummaryMessage(order) {
     `🔔 <b>YANGI BUYURTMA! / НОВЫЙ ЗАКАЗ!</b> (ID: #${escapeHtml(order.orderId)})`,
     '',
     `👤 <b>Mijoz / Клиент:</b> ${escapeHtml(order.customer_name)}`,
-    `📞 <b>Telefon / Телефон:</b> ${escapeHtml(order.phone_number)}`,
+    `📞 <b>Telefon / Телефон:</b> ${escapeHtml(formatPhoneForDisplay(order.phone_number))}`,
     `📍 <b>Manzil / Адрес:</b> ${escapeHtml(order.delivery_address)}`,
     '',
     `📦 <b>Mahsulot / Товары:</b> ${order.items.length} xil, ${totalUnits} dona`,
@@ -452,6 +479,16 @@ router.post('/orders', async (req, res) => {
     return res.status(400).json({ success: false, message: 'Missing required order details' });
   }
 
+  // Telefon raqami serverda ham tekshiriladi — brauzerdagi tekshiruvni
+  // chetlab o'tish mumkin, shuning uchun bunga tayanib bo'lmaydi
+  const normalizedPhone = normalizePhoneNumber(phone_number);
+  if (!normalizedPhone) {
+    return res.status(400).json({
+      success: false,
+      message: 'Telefon raqami noto\'g\'ri. Format: +998 va 9 ta raqam (masalan: +998901234567)'
+    });
+  }
+
   let dbSuccess = false;
   let orderId = Date.now(); // fallback ID
 
@@ -459,7 +496,7 @@ router.post('/orders', async (req, res) => {
   try {
     const orderResult = await db.query(
       'INSERT INTO orders (customer_name, phone_number, delivery_address, total_price) VALUES ($1, $2, $3, $4) RETURNING id',
-      [customer_name, phone_number, delivery_address, total_price]
+      [customer_name, normalizedPhone, delivery_address, total_price]
     );
     orderId = orderResult.rows[0].id;
 
@@ -489,7 +526,7 @@ router.post('/orders', async (req, res) => {
   const newOrder = {
     id: orderId,
     customer_name,
-    phone_number,
+    phone_number: normalizedPhone,
     delivery_address,
     total_price,
     items,
@@ -504,7 +541,7 @@ router.post('/orders', async (req, res) => {
   sendOrderNotification({
     orderId,
     customer_name,
-    phone_number,
+    phone_number: normalizedPhone,
     delivery_address,
     total_price,
     items

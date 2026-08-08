@@ -36,6 +36,38 @@ export default function CheckoutPage() {
     }));
   };
 
+  // ===== TELEFON RAQAMI =====
+  // Holatda faqat 9 ta raqam saqlanadi, "+998" maydon yonida alohida
+  // turadi va uni o'chirib bo'lmaydi.
+
+  // Kiritilgan yoki nusxa ko'chirilgan matndan 9 ta raqamni ajratib olish.
+  // "+998 90 123 45 67", "998901234567", "00998901234567" va
+  // "901234567" — hammasi "901234567" ga aylanadi.
+  const extractPhoneDigits = (raw) => {
+    let digits = String(raw || '').replace(/\D/g, '');
+    if (digits.startsWith('00998')) {
+      digits = digits.slice(5);
+    } else if (digits.startsWith('998') && digits.length > 9) {
+      digits = digits.slice(3);
+    }
+    return digits.slice(0, 9);
+  };
+
+  // 901234567 -> "90 123 45 67"
+  const formatPhoneDigits = (digits) => {
+    return [digits.slice(0, 2), digits.slice(2, 5), digits.slice(5, 7), digits.slice(7, 9)]
+      .filter(Boolean)
+      .join(' ');
+  };
+
+  const handlePhoneChange = (e) => {
+    setFormData((prev) => ({ ...prev, phone: extractPhoneDigits(e.target.value) }));
+  };
+
+  const isPhoneValid = formData.phone.length === 9;
+  // Bo'sh maydonda izoh chiqarmaymiz — mijoz hali yozmagan bo'lsa koyish noto'g'ri
+  const showPhoneError = formData.phone.length > 0 && !isPhoneValid;
+
   const calculateTotal = () => {
     return cartItems.reduce((acc, item) => acc + (item.price * item.quantity), 0);
   };
@@ -47,6 +79,13 @@ export default function CheckoutPage() {
     // Client-side validations
     if (!formData.name.trim() || !formData.phone.trim() || !formData.address.trim()) {
       setErrorMsg(language === 'uz' ? 'Iltimos, barcha maydonlarni to\'ldiring.' : 'Пожалуйста, заполните все поля.');
+      return;
+    }
+
+    if (!isPhoneValid) {
+      setErrorMsg(language === 'uz'
+        ? 'Telefon raqami to\'liq emas.'
+        : 'Номер телефона указан не полностью.');
       return;
     }
 
@@ -66,7 +105,8 @@ export default function CheckoutPage() {
         },
         body: JSON.stringify({
           customer_name: formData.name,
-          phone_number: formData.phone,
+          // Serverga har doim to'liq ko'rinishda yuboriladi
+          phone_number: `+998${formData.phone}`,
           delivery_address: formData.address,
           total_price: calculateTotal(),
           items: cartItems.map(item => ({
@@ -197,16 +237,30 @@ export default function CheckoutPage() {
 
               <div className="form-group">
                 <label htmlFor="phone-input" className="form-label">{t('checkout.phoneLabel')} *</label>
-                <input
-                  type="tel"
-                  id="phone-input"
-                  name="phone"
-                  value={formData.phone}
-                  onChange={handleInputChange}
-                  required
-                  placeholder="+998 90 123 45 67"
-                  className="form-input"
-                />
+                <div className={`phone-field ${showPhoneError ? 'has-error' : ''}`}>
+                  <span className="phone-prefix">+998</span>
+                  <input
+                    type="tel"
+                    inputMode="numeric"
+                    autoComplete="tel-national"
+                    id="phone-input"
+                    name="phone"
+                    value={formatPhoneDigits(formData.phone)}
+                    onChange={handlePhoneChange}
+                    required
+                    placeholder="90 123 45 67"
+                    className="phone-input"
+                    aria-invalid={showPhoneError}
+                    aria-describedby={showPhoneError ? 'phone-error' : undefined}
+                  />
+                </div>
+                {showPhoneError && (
+                  <p className="field-error" id="phone-error">
+                    {language === 'uz'
+                      ? 'Telefon raqami to\'liq emas — 9 ta raqam kerak (masalan: 90 123 45 67)'
+                      : 'Номер телефона неполный — нужно 9 цифр (например: 90 123 45 67)'}
+                  </p>
+                )}
               </div>
 
               <div className="form-group">
@@ -225,7 +279,7 @@ export default function CheckoutPage() {
               <div className="form-action">
                 <button
                   type="submit"
-                  disabled={isLoading || cartItems.length === 0}
+                  disabled={isLoading || cartItems.length === 0 || !isPhoneValid}
                   className="btn-primary w-full btn-submit-order"
                 >
                   {isLoading ? (language === 'uz' ? 'Yuborilmoqda...' : 'Отправка...') : t('checkout.submitBtn')}
@@ -354,6 +408,57 @@ export default function CheckoutPage() {
 
         .form-input:focus {
           border-color: var(--cta-orange);
+        }
+
+        /* Telefon maydoni: "+998" o'zgarmas yorliq sifatida chapda turadi */
+        .phone-field {
+          display: flex;
+          align-items: center;
+          border: 1px solid var(--border-color);
+          background-color: var(--white-surface);
+          border-radius: 3px;
+          height: 44px;
+          overflow: hidden;
+          transition: border-color 200ms ease;
+        }
+
+        .phone-field:focus-within {
+          border-color: var(--cta-orange);
+        }
+
+        .phone-field.has-error {
+          border-color: #c62828;
+        }
+
+        .phone-prefix {
+          padding: 0 12px;
+          font-size: 14px;
+          color: var(--secondary-text);
+          background-color: var(--card-bg);
+          align-self: stretch;
+          display: flex;
+          align-items: center;
+          border-right: 1px solid var(--border-color);
+          user-select: none;
+        }
+
+        .phone-input {
+          flex: 1;
+          min-width: 0;
+          height: 100%;
+          border: none;
+          background: none;
+          padding: 0 16px;
+          font-size: 14px;
+          color: var(--primary-text);
+          outline: none;
+          letter-spacing: 0.5px;
+        }
+
+        .field-error {
+          font-size: 13px;
+          color: #c62828;
+          margin: 6px 0 0;
         }
 
         .form-textarea {
