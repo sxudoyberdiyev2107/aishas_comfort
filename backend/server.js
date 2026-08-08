@@ -1,6 +1,8 @@
 const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
+const path = require('path');
+const uploadRouter = require('./routes/upload');
 require('dotenv').config();
 
 const apiRouter = require('./routes/api');
@@ -13,13 +15,13 @@ app.use(cors({
   origin: ['http://localhost:3000', 'https://aishas-comfort.uz', 'https://www.aishas-comfort.uz'],
   credentials: true // allow sending secure cookies/tokens
 }));
-
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use(express.json());
 app.use(cookieParser());
 
 // Mount API routes
 app.use('/api', apiRouter);
-
+app.use('/api/upload', uploadRouter);
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok', timestamp: new Date() });
