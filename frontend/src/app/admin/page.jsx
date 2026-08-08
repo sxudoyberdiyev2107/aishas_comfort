@@ -21,6 +21,10 @@ export default function AdminPage() {
   const [crudError, setCrudError] = useState('');
   const [crudSuccess, setCrudSuccess] = useState('');
 
+  // Image Upload States
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+
   // Product Form States
   const [productForm, setProductForm] = useState({
     name_uz: '',
@@ -36,6 +40,16 @@ export default function AdminPage() {
   });
 
   const backendUrl = 'https://aishascomfort-production.up.railway.app/api';
+  // Backend'ning asosiy manzili (/api'siz) - yuklangan rasmlarni ko'rsatish uchun
+  const serverUrl = backendUrl.replace(/\/api$/, '');
+
+  // Rasm manzilini to'liq ko'rinishga aylantirish
+  const getImageSrc = (url) => {
+    if (!url) return '';
+    if (url.startsWith('http://') || url.startsWith('https://')) return url;
+    if (url.startsWith('/uploads/')) return `${serverUrl}${url}`;
+    return url; // eski rasmlar (frontend/public ichida)
+  };
 
   // 1. Verify Auth session on load
   useEffect(() => {
@@ -122,6 +136,86 @@ export default function AdminPage() {
     setProductForm(prev => ({ ...prev, [name]: value }));
   };
 
+  // 4b. Rasm faylini serverga yuklash
+  const handleImageUpload = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+
+    setUploadError('');
+
+    // Fayl turi tekshiruvi (backend faqat jpg, png, webp qabul qiladi)
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+      setUploadError(language === 'uz'
+        ? 'Faqat JPG, PNG yoki WEBP formatidagi rasmlarni yuklash mumkin.'
+        : 'Можно загружать только изображения в формате JPG, PNG или WEBP.');
+      e.target.value = '';
+      return;
+    }
+
+    // Hajm tekshiruvi (backend chegarasi - 5 MB)
+    if (file.size > 5 * 1024 * 1024) {
+      setUploadError(language === 'uz'
+        ? 'Rasm hajmi 5 MB dan oshmasligi kerak.'
+        : 'Размер изображения не должен превышать 5 МБ.');
+      e.target.value = '';
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('image', file); // <-- backend/routes/upload.js dagi nom bilan bir xil bo'lishi shart
+
+      const res = await fetch(`${backendUrl}/upload`, {
+        method: 'POST',
+        body: formData, // Content-Type ni QO'LDA yozmaymiz - brauzer o'zi qo'yadi
+        credentials: 'include'
+      });
+
+      if (res.status === 401 || res.status === 403) {
+        setIsAuthenticated(false);
+        return;
+      }
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.url) {
+          setProductForm(prev => ({ ...prev, image_url: data.url }));
+        } else {
+          setUploadError(language === 'uz'
+            ? 'Server rasm manzilini qaytarmadi.'
+            : 'Сервер не вернул ссылку на изображение.');
+        }
+      } else {
+        // Backend o'z xato matnini qaytarsa, o'shani ko'rsatamiz
+        let msg = language === 'uz'
+          ? 'Rasm yuklanmadi. Qaytadan urinib ko\'ring.'
+          : 'Изображение не загружено. Попробуйте снова.';
+        try {
+          const errData = await res.json();
+          if (errData && errData.error) msg = errData.error;
+        } catch (parseErr) {
+          // javob JSON emas - standart xabar qoladi
+        }
+        setUploadError(msg);
+      }
+    } catch (err) {
+      setUploadError(language === 'uz'
+        ? 'Serverga ulanishda xatolik.'
+        : 'Ошибка соединения с сервером.');
+    } finally {
+      setUploading(false);
+      e.target.value = ''; // bir xil faylni qayta tanlash mumkin bo'lsin
+    }
+  };
+
+  // 4c. Tanlangan rasmni olib tashlash
+  const handleRemoveImage = () => {
+    setProductForm(prev => ({ ...prev, image_url: '' }));
+    setUploadError('');
+  };
+
   // 5. Create or Update Product
   const handleProductSubmit = async (e) => {
     e.preventDefault();
@@ -201,6 +295,7 @@ export default function AdminPage() {
   const handleEditProduct = (prod) => {
     setIsEditing(true);
     setEditingId(prod.id);
+    setUploadError('');
     setProductForm({
       name_uz: prod.name_uz || '',
       name_ru: prod.name_ru || '',
@@ -218,6 +313,7 @@ export default function AdminPage() {
   const resetProductForm = () => {
     setIsEditing(false);
     setEditingId(null);
+    setUploadError('');
     setProductForm({
       name_uz: '',
       name_ru: '',
@@ -501,18 +597,48 @@ export default function AdminPage() {
                   </div>
                 </div>
 
+                {/* ===== RASM YUKLASH (fayl tanlash) ===== */}
                 <div className="form-group">
                   <label htmlFor="img-input">{t('admin.image')}</label>
+
                   <input
-                    type="text"
+                    type="file"
                     id="img-input"
-                    name="image_url"
-                    value={productForm.image_url}
-                    onChange={handleFormChange}
-                    placeholder="/prod_bedding.jpg"
-                    className="form-input"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={handleImageUpload}
+                    disabled={uploading}
+                    className="file-input"
                   />
+
+                  {uploading && (
+                    <p className="upload-status">
+                      {language === 'uz' ? 'Rasm yuklanmoqda...' : 'Изображение загружается...'}
+                    </p>
+                  )}
+
+                  {uploadError && <p className="upload-error">{uploadError}</p>}
+
+                  {productForm.image_url && !uploading && (
+                    <div className="image-preview-row">
+                      <img
+                        src={getImageSrc(productForm.image_url)}
+                        alt=""
+                        className="image-preview"
+                      />
+                      <div className="image-preview-info">
+                        <span className="image-path">{productForm.image_url}</span>
+                        <button
+                          type="button"
+                          onClick={handleRemoveImage}
+                          className="remove-image-btn"
+                        >
+                          {language === 'uz' ? 'Rasmni olib tashlash' : 'Удалить изображение'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
+                {/* ===== RASM YUKLASH TUGADI ===== */}
 
                 <div className="form-group">
                   <label htmlFor="video-input">{language === 'uz' ? 'Video havolasi (YouTube)' : 'Ссылка на видео (YouTube)'}</label>
@@ -528,7 +654,7 @@ export default function AdminPage() {
                 </div>
 
                 <div className="form-actions-row">
-                  <button type="submit" className="btn-primary flex-grow">
+                  <button type="submit" className="btn-primary flex-grow" disabled={uploading}>
                     {t('admin.saveBtn')}
                   </button>
                   {isEditing && (
@@ -548,6 +674,7 @@ export default function AdminPage() {
                   <thead>
                     <tr>
                       <th>ID</th>
+                      <th>{language === 'uz' ? 'Rasm' : 'Фото'}</th>
                       <th>{language === 'uz' ? 'Nomi' : 'Название'}</th>
                       <th>{t('admin.productPrice')}</th>
                       <th>{t('admin.productStock')}</th>
@@ -560,6 +687,17 @@ export default function AdminPage() {
                       return (
                         <tr key={prod.id}>
                           <td>{prod.id}</td>
+                          <td>
+                            {prod.image_url ? (
+                              <img
+                                src={getImageSrc(prod.image_url)}
+                                alt=""
+                                className="table-thumb"
+                              />
+                            ) : (
+                              <span className="text-secondary">—</span>
+                            )}
+                          </td>
                           <td className="font-medium">{name}</td>
                           <td>{parseFloat(prod.price).toLocaleString()} {t('products.priceCurrency')}</td>
                           <td>{prod.stock}</td>
@@ -785,6 +923,101 @@ export default function AdminPage() {
           height: 70px;
           padding: 8px 12px;
           resize: vertical;
+        }
+
+        /* Rasm yuklash bloki */
+        .file-input {
+          border: 1px dashed var(--border-color);
+          background-color: var(--card-bg);
+          border-radius: 3px;
+          padding: 10px 12px;
+          font-size: 13px;
+          width: 100%;
+          cursor: pointer;
+          outline: none;
+        }
+
+        .file-input:hover:not(:disabled) {
+          border-color: var(--cta-orange);
+        }
+
+        .file-input:focus-visible {
+          border-color: var(--cta-orange);
+          outline: 2px solid var(--cta-orange);
+          outline-offset: 2px;
+        }
+
+        .file-input:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+
+        .upload-status {
+          font-size: 12px;
+          color: var(--cta-orange);
+          margin-top: 2px;
+        }
+
+        .upload-error {
+          font-size: 12px;
+          color: #c62828;
+          margin-top: 2px;
+        }
+
+        .image-preview-row {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          margin-top: 8px;
+          padding: 8px;
+          border: 1px solid var(--border-color);
+          border-radius: 3px;
+          background-color: var(--card-bg);
+        }
+
+        .image-preview {
+          width: 64px;
+          height: 64px;
+          object-fit: cover;
+          border-radius: 3px;
+          border: 1px solid var(--border-color);
+          background-color: var(--white-surface);
+          flex-shrink: 0;
+        }
+
+        .image-preview-info {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+          min-width: 0;
+        }
+
+        .image-path {
+          font-size: 11px;
+          color: var(--secondary-text);
+          word-break: break-all;
+        }
+
+        .remove-image-btn {
+          font-size: 12px;
+          font-weight: 600;
+          color: #c62828;
+          text-decoration: underline;
+          text-align: left;
+        }
+
+        .remove-image-btn:hover {
+          color: #b71c1c;
+        }
+
+        .table-thumb {
+          width: 44px;
+          height: 44px;
+          object-fit: cover;
+          border-radius: 3px;
+          border: 1px solid var(--border-color);
+          background-color: var(--card-bg);
+          display: block;
         }
 
         .form-actions-row {
