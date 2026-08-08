@@ -155,6 +155,30 @@ const sanitizeProductForPublic = (product) => {
   };
 };
 
+// Mahsulotlarni bazadan o'qish uchun umumiy SELECT.
+// Bazada faqat category_id (raqam) saqlanadi, sayt esa category
+// (matn slug, masalan "parta-stullar") maydonini kutadi — shuning
+// uchun categories jadvaliga JOIN qilib slug'ni ham qaytaramiz.
+// LEFT JOIN: kategoriyasi yo'q mahsulot ham ro'yxatdan tushib qolmaydi.
+const PRODUCT_SELECT = `
+  SELECT p.*, c.slug AS category
+  FROM products p
+  LEFT JOIN categories c ON c.id = p.category_id
+`;
+
+// Kategoriya slug'i bo'yicha uning bazadagi raqamini topadi.
+// Topilmasa null qaytaradi va ogohlantirish yozadi (aks holda
+// mahsulot jimgina kategoriyasiz saqlanib ketadi).
+async function resolveCategoryId(categorySlug) {
+  if (!categorySlug) return null;
+  const catResult = await db.query('SELECT id FROM categories WHERE slug = $1', [categorySlug]);
+  if (catResult.rows.length > 0) {
+    return catResult.rows[0].id;
+  }
+  console.warn(`Kategoriya topilmadi: "${categorySlug}". Mahsulot kategoriyasiz saqlanadi.`);
+  return null;
+}
+
 // ==========================================
 // 1. PUBLIC ROUTES (Products & Categories)
 // ==========================================
@@ -162,7 +186,7 @@ const sanitizeProductForPublic = (product) => {
 // GET all products
 router.get('/products', async (req, res) => {
   try {
-    const result = await db.query('SELECT * FROM products ORDER BY id DESC');
+    const result = await db.query(`${PRODUCT_SELECT} ORDER BY p.id DESC`);
     let productsList = result.rows;
     if (!isAdminRequest(req)) {
       productsList = productsList.map(sanitizeProductForPublic);
@@ -183,7 +207,7 @@ router.get('/products', async (req, res) => {
 router.get('/products/:id', async (req, res) => {
   const { id } = req.params;
   try {
-    const result = await db.query('SELECT * FROM products WHERE id = $1', [id]);
+    const result = await db.query(`${PRODUCT_SELECT} WHERE p.id = $1`, [id]);
     if (result.rows.length > 0) {
       let product = result.rows[0];
       if (!isAdminRequest(req)) {
@@ -329,6 +353,9 @@ router.post('/admin/login', async (req, res) => {
     return res.status(400).json({ success: false, message: 'Username and password required' });
   }
 
+  // Admin hisobi FAQAT bazadan o'qiladi.
+  // Kodda zaxira parol saqlanmaydi — bu repozitoriya ochiq.
+  // Yangi admin yaratish / parolni almashtirish: node create-admin.js
   let user = null;
 
   try {
@@ -337,17 +364,13 @@ router.post('/admin/login', async (req, res) => {
       user = result.rows[0];
     }
   } catch (err) {
-    console.warn('Database error on admin lookup, using default config:', err.message);
-  }
-
-  // Fallback defaults if DB lookup fails or user table is empty
-  // Default username: 'admin', default password: 's3336336'
-  // Bcrypt hash of 's3336336': $2b$10$wlxBSJ0HXyIVdCE8oE4OYuDf1Qhs8JD9rGI9QfKZ.HYUqLvehlQFi
-  if (!user && username === 'admin') {
-    user = {
-      username: 'admin',
-      password: '$2b$10$wlxBSJ0HXyIVdCE8oE4OYuDf1Qhs8JD9rGI9QfKZ.HYUqLvehlQFi'
-    };
+    // Baza ishlamasa, "parol xato" deb aldash noto'g'ri bo'lardi —
+    // ochiq-oydin "aloqa yo'q" javobini qaytaramiz.
+    console.error('Bazaga ulanishda xato (admin login):', err.message);
+    return res.status(503).json({
+      success: false,
+      message: 'Baza bilan aloqa yo\'q. Keyinroq urinib ko\'ring.'
+    });
   }
 
   if (!user) {
@@ -424,22 +447,22 @@ router.post('/products', authMiddleware, async (req, res) => {
 
   try {
     // Retrieve category ID
-    let categoryId = null;
-    const catResult = await db.query('SELECT id FROM categories WHERE slug = $1', [category]);
-    if (catResult.rows.length > 0) {
-      categoryId = catResult.rows[0].id;
-    }
+    const categoryId = await resolveCategoryId(category);
 
     const result = await db.query(
       'INSERT INTO products (category_id, slug, name_uz, name_ru, desc_uz, desc_ru, price, old_price, stock, image_url, video_url) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *',
       [categoryId, slug, name_uz, name_ru, desc_uz, desc_ru, price, old_price, stock, image_url, video_url]
     );
 
+    // Javobga kategoriya slug'ini ham qo'shamiz (bazadan faqat
+    // category_id qaytadi, sayt esa category matnini kutadi)
+    const savedProduct = { ...result.rows[0], category: categoryId ? category : null };
+
     // Sync in-memory fallback list
-    mockProducts.unshift(result.rows[0]);
+    mockProducts.unshift(savedProduct);
     saveMockProducts(mockProducts);
 
-    res.status(201).json(result.rows[0]);
+    res.status(201).json(savedProduct);
   } catch (err) {
     console.warn('Database error, saving product to mock array:', err.message);
     const newProduct = {
@@ -470,11 +493,7 @@ router.put('/products/:id', authMiddleware, async (req, res) => {
   const { name_uz, name_ru, desc_uz, desc_ru, price, old_price, stock, category, image_url, video_url } = req.body;
 
   try {
-    let categoryId = null;
-    const catResult = await db.query('SELECT id FROM categories WHERE slug = $1', [category]);
-    if (catResult.rows.length > 0) {
-      categoryId = catResult.rows[0].id;
-    }
+    const categoryId = await resolveCategoryId(category);
 
     const result = await db.query(
       'UPDATE products SET category_id = $1, name_uz = $2, name_ru = $3, desc_uz = $4, desc_ru = $5, price = $6, old_price = $7, stock = $8, image_url = $9, video_url = $11 WHERE id = $10 RETURNING *',
@@ -482,13 +501,15 @@ router.put('/products/:id', authMiddleware, async (req, res) => {
     );
 
     if (result.rows.length > 0) {
+      const savedProduct = { ...result.rows[0], category: categoryId ? category : null };
+
       // Sync mock list
       const idx = mockProducts.findIndex(p => p.id === parseInt(id));
       if (idx > -1) {
-        mockProducts[idx] = result.rows[0];
+        mockProducts[idx] = savedProduct;
         saveMockProducts(mockProducts);
       }
-      res.json(result.rows[0]);
+      res.json(savedProduct);
     } else {
       res.status(404).json({ message: 'Product not found' });
     }

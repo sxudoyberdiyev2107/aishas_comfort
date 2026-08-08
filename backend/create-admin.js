@@ -1,14 +1,35 @@
+require('dotenv').config();
 const bcrypt = require('bcrypt');
 const db = require('./config/db');
 
-const username = 'admin';
-const plainPassword = 's3336336';
+// DIQQAT: parol bu yerga YOZILMAYDI.
+// U ADMIN_PASSWORD nomli muhit o'zgaruvchisidan (Railway -> Variables)
+// o'qiladi. Sababi: bu fayl ochiq GitHub repozitoriyasida turadi.
+const username = process.env.ADMIN_USERNAME || 'admin';
+const plainPassword = process.env.ADMIN_PASSWORD;
 const saltRounds = 10;
+
+if (!plainPassword) {
+  console.error('\x1b[31m%s\x1b[0m', 'XATO: ADMIN_PASSWORD o\'zgaruvchisi topilmadi.');
+  console.error('');
+  console.error('Parolni kodga yozmang. Uni quyidagicha qo\'shing:');
+  console.error('  Railway -> backend servisi -> Variables -> New Variable');
+  console.error('  Nomi:  ADMIN_PASSWORD');
+  console.error('  Qiymati: <o\'zingiz tanlagan parol>');
+  console.error('');
+  console.error('Keyin shu skriptni qayta ishga tushiring.');
+  process.exit(1);
+}
+
+if (plainPassword.length < 8) {
+  console.error('\x1b[31m%s\x1b[0m', 'XATO: parol juda qisqa (kamida 8 belgi bo\'lsin).');
+  process.exit(1);
+}
 
 async function createAdminUser() {
   try {
     console.log('PostgreSQL bazasiga ulanish va sozlash boshlandi...');
-    
+
     // 1. Ensure the users table exists
     await db.query(`
       CREATE TABLE IF NOT EXISTS users (
