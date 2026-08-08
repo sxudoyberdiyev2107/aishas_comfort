@@ -1282,9 +1282,10 @@ export default function AdminPage() {
                         <ul className="order-items-bullet">
                           {order.items && order.items.map((it, idx) => {
                             const name = language === 'uz' ? it.name_uz : it.name_ru;
+                            const colorName = language === 'uz' ? it.color_name_uz : it.color_name_ru;
                             return (
                               <li key={idx}>
-                                {name} - <strong>{it.quantity}x</strong>
+                                {name}{colorName ? ` (${colorName})` : ''} - <strong>{it.quantity}x</strong>
                               </li>
                             );
                           })}

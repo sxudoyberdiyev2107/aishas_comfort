@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useLanguage } from '../../context/LanguageContext';
+import { getCartLineKey } from '../../lib/cart';
 
 export default function CheckoutPage() {
   const { t, language } = useLanguage();
@@ -72,6 +73,9 @@ export default function CheckoutPage() {
             product_id: item.id,
             name_uz: item.name_uz,
             name_ru: item.name_ru,
+            // Tanlangan rang nomi (rangsiz mahsulotda null)
+            color_name_uz: item.color_name_uz || null,
+            color_name_ru: item.color_name_ru || null,
             quantity: item.quantity,
             price: item.price
           }))
@@ -237,10 +241,13 @@ export default function CheckoutPage() {
                   <div className="summary-items-list">
                     {cartItems.map((item) => {
                       const name = language === 'uz' ? item.name_uz : item.name_ru;
+                      const colorName = language === 'uz' ? item.color_name_uz : item.color_name_ru;
                       return (
-                        <div className="summary-item" key={item.id}>
+                        <div className="summary-item" key={getCartLineKey(item)}>
                           <div className="summary-item-details">
-                            <span className="summary-item-name">{name}</span>
+                            <span className="summary-item-name">
+                              {name}{colorName ? ` (${colorName})` : ''}
+                            </span>
                             <span className="summary-item-qty">x {item.quantity}</span>
                           </div>
                           <span className="summary-item-price">

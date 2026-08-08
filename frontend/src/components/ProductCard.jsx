@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '../context/LanguageContext';
 import { getImageSrc } from '../lib/imageUrl';
+import { isSameCartLine } from '../lib/cart';
 
 export default function ProductCard({ product }) {
   const { language, t } = useLanguage();
@@ -38,19 +39,27 @@ export default function ProductCard({ product }) {
 
     if (typeof window !== 'undefined') {
       const cart = JSON.parse(localStorage.getItem('cart') || '[]');
-      const existingItemIdx = cart.findIndex((item) => item.id === product.id);
+
+      // Bu yerga faqat rangsiz mahsulotlar keladi (rangli mahsulot
+      // yuqorida mahsulot sahifasiga yo'naltiriladi)
+      const newLine = {
+        id: product.id,
+        name_uz: product.name_uz,
+        name_ru: product.name_ru,
+        price: product.price,
+        image_url: product.image_url,
+        color_id: null,
+        color_name_uz: null,
+        color_name_ru: null,
+        quantity: 1
+      };
+
+      const existingItemIdx = cart.findIndex((item) => isSameCartLine(item, newLine));
 
       if (existingItemIdx > -1) {
         cart[existingItemIdx].quantity += 1;
       } else {
-        cart.push({
-          id: product.id,
-          name_uz: product.name_uz,
-          name_ru: product.name_ru,
-          price: product.price,
-          image_url: product.image_url,
-          quantity: 1
-        });
+        cart.push(newLine);
       }
 
       localStorage.setItem('cart', JSON.stringify(cart));

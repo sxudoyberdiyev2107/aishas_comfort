@@ -328,9 +328,11 @@ router.post('/orders', async (req, res) => {
     orderId = orderResult.rows[0].id;
 
     for (const item of items) {
+      // Rang NOMI saqlanadi (raqami emas): keyin rang o'chirilsa ham
+      // buyurtmada mijoz nimani tanlagani ko'rinib turadi
       await db.query(
-        'INSERT INTO order_items (order_id, product_id, quantity, price) VALUES ($1, $2, $3, $4)',
-        [orderId, item.product_id, item.quantity, item.price]
+        'INSERT INTO order_items (order_id, product_id, quantity, price, color_name_uz, color_name_ru) VALUES ($1, $2, $3, $4, $5, $6)',
+        [orderId, item.product_id, item.quantity, item.price, item.color_name_uz || null, item.color_name_ru || null]
       );
     }
     dbSuccess = true;
@@ -352,8 +354,12 @@ router.post('/orders', async (req, res) => {
   saveMockOrders(mockOrders);
 
   // C. Send Automatic Telegram Notification
-  const formattedItemsUz = items.map(it => `- *${it.name_uz}* (${it.quantity} dona) - ${(it.price * it.quantity).toLocaleString()} so'm`).join('\n');
-  const formattedItemsRu = items.map(it => `- *${it.name_ru}* (${it.quantity} шт) - ${(it.price * it.quantity).toLocaleString()} сум`).join('\n');
+  // Rang tanlangan bo'lsa nom yonida qavs ichida ko'rsatiladi,
+  // rangsiz mahsulotda qavs umuman chiqmaydi
+  const colorSuffix = (colorName) => (colorName ? ` (${colorName})` : '');
+
+  const formattedItemsUz = items.map(it => `- *${it.name_uz}${colorSuffix(it.color_name_uz)}* (${it.quantity} dona) - ${(it.price * it.quantity).toLocaleString()} so'm`).join('\n');
+  const formattedItemsRu = items.map(it => `- *${it.name_ru}${colorSuffix(it.color_name_ru)}* (${it.quantity} шт) - ${(it.price * it.quantity).toLocaleString()} сум`).join('\n');
 
   const mdMessage = `
 🔔 *YANGI BUYURTMA! / НОВЫЙ ЗАКАЗ!* (ID: #${orderId})

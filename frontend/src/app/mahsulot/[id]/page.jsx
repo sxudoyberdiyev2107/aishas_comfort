@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useLanguage } from '../../../context/LanguageContext';
 import { getImageSrc } from '../../../lib/imageUrl';
+import { isSameCartLine } from '../../../lib/cart';
 
 const getYouTubeEmbedUrl = (url) => {
   if (!url) return null;
@@ -168,23 +169,37 @@ export default function ProductDetailPage({ params }) {
   };
 
   const handleAddToCart = () => {
+    // Rangli mahsulotda rang tanlanmagan bo'lsa (hammasi tugagan)
+    // savatga qo'shmaymiz
+    if (hasColors && !selectedColor) return;
+
     setIsAdding(true);
 
     if (typeof window !== 'undefined') {
       const cart = JSON.parse(localStorage.getItem('cart') || '[]');
-      const existingItemIdx = cart.findIndex((item) => item.id === product.id);
+
+      const newLine = {
+        id: product.id,
+        name_uz: product.name_uz,
+        name_ru: product.name_ru,
+        price: product.price,
+        // Savatchada mijoz aynan tanlagan rangdagi rasmni ko'rsin
+        image_url: colorImages[0]?.image_url || product.image_url,
+        // Rang NOMI nusxa qilinadi: keyin rang o'chirilsa ham
+        // savatchada nima tanlangani ko'rinib turadi
+        color_id: selectedColor ? selectedColor.id : null,
+        color_name_uz: selectedColor ? selectedColor.name_uz : null,
+        color_name_ru: selectedColor ? selectedColor.name_ru : null,
+        quantity: quantity
+      };
+
+      // Moslik id + rang bo'yicha tekshiriladi, faqat id bo'yicha emas
+      const existingItemIdx = cart.findIndex((item) => isSameCartLine(item, newLine));
 
       if (existingItemIdx > -1) {
         cart[existingItemIdx].quantity += quantity;
       } else {
-        cart.push({
-          id: product.id,
-          name_uz: product.name_uz,
-          name_ru: product.name_ru,
-          price: product.price,
-          image_url: product.image_url,
-          quantity: quantity
-        });
+        cart.push(newLine);
       }
 
       localStorage.setItem('cart', JSON.stringify(cart));

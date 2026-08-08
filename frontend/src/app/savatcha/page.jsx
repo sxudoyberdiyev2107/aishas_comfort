@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useLanguage } from '../../context/LanguageContext';
 import { getImageSrc } from '../../lib/imageUrl';
+import { getCartLineKey } from '../../lib/cart';
 
 export default function CartPage() {
   const { t, language } = useLanguage();
@@ -18,11 +19,15 @@ export default function CartPage() {
     setMounted(true);
   }, []);
 
-  const updateQuantity = (id, newQty) => {
+  // DIQQAT: quyidagi ikkala amal ham QATOR kaliti bo'yicha ishlaydi,
+  // mahsulot raqami bo'yicha emas. Aks holda bir mahsulotning ko'k va
+  // qizil varianti bir-biriga aralashib ketardi (birining sonini
+  // o'zgartirsangiz ikkinchisiniki ham o'zgarardi).
+  const updateQuantity = (lineKey, newQty) => {
     if (newQty < 1) return;
-    
+
     const updated = cartItems.map((item) => {
-      if (item.id === id) {
+      if (getCartLineKey(item) === lineKey) {
         return { ...item, quantity: newQty };
       }
       return item;
@@ -33,8 +38,8 @@ export default function CartPage() {
     window.dispatchEvent(new Event('cartUpdated'));
   };
 
-  const removeItem = (id) => {
-    const updated = cartItems.filter((item) => item.id !== id);
+  const removeItem = (lineKey) => {
+    const updated = cartItems.filter((item) => getCartLineKey(item) !== lineKey);
     setCartItems(updated);
     localStorage.setItem('cart', JSON.stringify(updated));
     window.dispatchEvent(new Event('cartUpdated'));
@@ -65,22 +70,29 @@ export default function CartPage() {
               <div className="cart-items-list">
                 {cartItems.map((item) => {
                   const name = language === 'uz' ? item.name_uz : item.name_ru;
+                  const colorName = language === 'uz' ? item.color_name_uz : item.color_name_ru;
+                  const lineKey = getCartLineKey(item);
                   return (
-                    <div className="cart-item" key={item.id}>
+                    <div className="cart-item" key={lineKey}>
                       {/* Product details info */}
                       <div className="item-details">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img 
+                        <img
                           src={getImageSrc(item.image_url)}
-                          alt={name} 
+                          alt={name}
                           className="item-image"
                         />
                         <div className="item-name-wrap">
                           <Link href={`/mahsulot/${item.id}`} className="item-name">
                             {name}
                           </Link>
-                          <button 
-                            onClick={() => removeItem(item.id)} 
+                          {colorName && (
+                            <span className="item-color">
+                              {language === 'uz' ? 'Rang' : 'Цвет'}: {colorName}
+                            </span>
+                          )}
+                          <button
+                            onClick={() => removeItem(lineKey)}
                             className="btn-remove-item"
                           >
                             {language === 'uz' ? 'O\'chirish' : 'Удалить'}
@@ -96,15 +108,15 @@ export default function CartPage() {
                       {/* Qty Selector */}
                       <div className="item-qty">
                         <div className="qty-selector">
-                          <button 
-                            onClick={() => updateQuantity(item.id, item.quantity - 1)} 
+                          <button
+                            onClick={() => updateQuantity(lineKey, item.quantity - 1)}
                             className="qty-btn"
                           >
                             -
                           </button>
                           <span className="qty-number">{item.quantity}</span>
-                          <button 
-                            onClick={() => updateQuantity(item.id, item.quantity + 1)} 
+                          <button
+                            onClick={() => updateQuantity(lineKey, item.quantity + 1)}
                             className="qty-btn"
                           >
                             +
@@ -255,6 +267,11 @@ export default function CartPage() {
 
         .item-name:hover {
           color: var(--cta-orange);
+        }
+
+        .item-color {
+          font-size: 13px;
+          color: var(--secondary-text);
         }
 
         .btn-remove-item {
