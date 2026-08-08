@@ -10,6 +10,7 @@
 --   1) schema.sql                                (shu fayl)
 --   2) migrations/001_colors_and_visibility.sql  (ranglar + yashirish/arxiv)
 --   3) migrations/002_color_availability.sql     (rang mavjudligi)
+--   4) migrations/003_order_item_image.sql       (buyurtma qatoridagi rasm)
 --
 -- Hammasi "IF NOT EXISTS" bilan yozilgan: ikki marta ishga
 -- tushirilsa ham xato bermaydi va mavjud ma'lumotni buzmaydi.

@@ -1283,9 +1283,23 @@ export default function AdminPage() {
                           {order.items && order.items.map((it, idx) => {
                             const name = language === 'uz' ? it.name_uz : it.name_ru;
                             const colorName = language === 'uz' ? it.color_name_uz : it.color_name_ru;
+                            // Buyurtma paytida saqlangan rasm; eski buyurtmalarda
+                            // u bo'lmaydi — mahsulotning hozirgi rasmiga tushamiz
+                            const itemImage = it.image_url || it.product_image_url;
                             return (
-                              <li key={idx}>
-                                {name}{colorName ? ` (${colorName})` : ''} - <strong>{it.quantity}x</strong>
+                              <li key={idx} className="order-item-row">
+                                {itemImage ? (
+                                  <img
+                                    src={getImageSrc(itemImage)}
+                                    alt=""
+                                    className="order-item-thumb"
+                                  />
+                                ) : (
+                                  <span className="order-item-thumb order-item-thumb-empty">—</span>
+                                )}
+                                <span>
+                                  {name}{colorName ? ` (${colorName})` : ''} - <strong>{it.quantity}x</strong>
+                                </span>
                               </li>
                             );
                           })}
@@ -1923,8 +1937,34 @@ export default function AdminPage() {
         }
 
         .order-items-bullet {
-          padding-left: 16px;
+          padding-left: 0;
+          margin: 0;
+          list-style: none;
           font-size: 13px;
+        }
+
+        .order-item-row {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 3px 0;
+        }
+
+        .order-item-thumb {
+          width: 36px;
+          height: 36px;
+          object-fit: cover;
+          border-radius: 3px;
+          border: 1px solid var(--border-color);
+          flex-shrink: 0;
+        }
+
+        .order-item-thumb-empty {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: var(--secondary-text);
+          font-size: 12px;
         }
 
         .error-banner {

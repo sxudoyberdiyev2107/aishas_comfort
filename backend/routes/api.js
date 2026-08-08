@@ -331,23 +331,36 @@ const truncate = (text, limit) => (text.length <= limit ? text : `${text.slice(0
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// Savatchadan kelgan rasm manzilini to'liq ochiq URL ga aylantirish.
+// Mijoz savatchasidan kelgan rasm yo'lini tekshirish.
 //
-// XAVFSIZLIK: bu manzil mijoz brauzeridan keladi, shuning uchun faqat
+// XAVFSIZLIK: bu qiymat mijoz brauzeridan keladi, shuning uchun faqat
 // ICHKI yo'llar (bitta "/" bilan boshlanadigan) qabul qilinadi.
 // Aks holda kimdir buyurtma so'roviga tashqi manzil yozib, sizning
-// Telegramingizga istalgan rasmni yuborishi mumkin bo'lardi.
-function buildPublicImageUrl(imagePath) {
+// Telegramingizga istalgan rasmni yuborishi yoki bazaga begona
+// manzil yozib qo'yishi mumkin bo'lardi.
+//
+// Ham Telegramga yuborishda, ham bazaga saqlashda shu bitta
+// tekshiruv ishlatiladi.
+function sanitizeInternalImagePath(imagePath) {
   if (typeof imagePath !== 'string') return null;
 
   const trimmed = imagePath.trim();
   if (!trimmed.startsWith('/')) return null;   // http://, data:, nisbiy yo'l
   if (trimmed.startsWith('//')) return null;   // //boshqa-sayt.com
   if (trimmed.includes('\\')) return null;
+  if (trimmed.length > 255) return null;       // bazadagi ustun chegarasi
 
-  const base = trimmed.startsWith('/uploads/') ? PUBLIC_BACKEND_URL : PUBLIC_FRONTEND_URL;
+  return trimmed;
+}
+
+// Ichki yo'lni to'liq ochiq URL ga aylantirish (Telegram uchun)
+function buildPublicImageUrl(imagePath) {
+  const safePath = sanitizeInternalImagePath(imagePath);
+  if (!safePath) return null;
+
+  const base = safePath.startsWith('/uploads/') ? PUBLIC_BACKEND_URL : PUBLIC_FRONTEND_URL;
   // encodeURI bo'sh joy kabi belgilarni to'g'rilaydi, "/" ga tegmaydi
-  return `${base}${encodeURI(trimmed)}`;
+  return `${base}${encodeURI(safePath)}`;
 }
 
 // Buyurtmaning umumiy xabari (birinchi bo'lib yuboriladi)
@@ -451,11 +464,20 @@ router.post('/orders', async (req, res) => {
     orderId = orderResult.rows[0].id;
 
     for (const item of items) {
-      // Rang NOMI saqlanadi (raqami emas): keyin rang o'chirilsa ham
-      // buyurtmada mijoz nimani tanlagani ko'rinib turadi
+      // Rang NOMI va RASM manzili nusxa qilib saqlanadi (raqami emas):
+      // keyin rang o'chirilsa yoki rasm almashtirilsa ham, buyurtmada
+      // mijoz aynan nimani ko'rgani saqlanib qoladi — xuddi narx kabi
       await db.query(
-        'INSERT INTO order_items (order_id, product_id, quantity, price, color_name_uz, color_name_ru) VALUES ($1, $2, $3, $4, $5, $6)',
-        [orderId, item.product_id, item.quantity, item.price, item.color_name_uz || null, item.color_name_ru || null]
+        'INSERT INTO order_items (order_id, product_id, quantity, price, color_name_uz, color_name_ru, image_url) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+        [
+          orderId,
+          item.product_id,
+          item.quantity,
+          item.price,
+          item.color_name_uz || null,
+          item.color_name_ru || null,
+          sanitizeInternalImagePath(item.image_url)
+        ]
       );
     }
     dbSuccess = true;
@@ -585,7 +607,9 @@ router.get('/orders', authMiddleware, async (req, res) => {
     const ordersList = [];
     for (const order of result.rows) {
       const itemsResult = await db.query(
-        'SELECT oi.*, p.name_uz, p.name_ru FROM order_items oi LEFT JOIN products p ON oi.product_id = p.id WHERE oi.order_id = $1',
+        // product_image_url — mahsulotning HOZIRGI rasmi. U faqat eski
+        // buyurtmalar uchun kerak: ularda oi.image_url saqlanmagan.
+        'SELECT oi.*, p.name_uz, p.name_ru, p.image_url AS product_image_url FROM order_items oi LEFT JOIN products p ON oi.product_id = p.id WHERE oi.order_id = $1',
         [order.id]
       );
       ordersList.push({
