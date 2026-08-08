@@ -371,8 +371,8 @@ router.post('/admin/login', async (req, res) => {
   const isProduction = process.env.NODE_ENV === 'production';
   res.cookie('admin_token', token, {
     httpOnly: true,
-    secure: isProduction, // HTTPS only in production
-    sameSite: 'Strict',
+    secure: true, // sameSite 'none' uchun HTTPS majburiy
+    sameSite: 'none', // frontend va backend turli domenlarda
     maxAge: 3600000 // 1 hour
   });
 
@@ -381,10 +381,11 @@ router.post('/admin/login', async (req, res) => {
 
 // POST Admin Logout
 router.post('/admin/logout', (req, res) => {
-  res.cookie('admin_token', '', {
+ res.cookie('admin_token', '', {
     httpOnly: true,
+    secure: true,
     expires: new Date(0),
-    sameSite: 'Strict'
+    sameSite: 'none'
   });
   res.json({ success: true, message: 'Logged out successfully' });
 });
