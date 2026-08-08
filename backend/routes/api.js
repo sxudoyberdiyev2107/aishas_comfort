@@ -159,13 +159,48 @@ const sanitizeProductForPublic = (product) => {
 // (zaxira ro'yxatdagi eski yozuvlarda bu maydonlar yo'q — ular ko'rinadi)
 const isPubliclyVisible = (product) => !product.is_hidden && !product.is_archived;
 
+// Bitta mahsulotning ranglarini rasmlari bilan birga o'qiydi.
+// Natija: [{ id, name_uz, name_ru, hex_code, images: [...] }, ...]
+// Rangi yo'q mahsulot uchun bo'sh ro'yxat qaytadi.
+async function loadProductColors(productId) {
+  const colorsResult = await db.query(
+    'SELECT * FROM product_colors WHERE product_id = $1 ORDER BY sort_order, id',
+    [productId]
+  );
+
+  if (colorsResult.rows.length === 0) {
+    return [];
+  }
+
+  // Barcha rasmlarni bitta so'rovda olamiz (har rang uchun alohida
+  // so'rov yubormaslik uchun)
+  const colorIds = colorsResult.rows.map(c => c.id);
+  const imagesResult = await db.query(
+    'SELECT * FROM product_color_images WHERE color_id = ANY($1::int[]) ORDER BY sort_order, id',
+    [colorIds]
+  );
+
+  return colorsResult.rows.map(color => ({
+    ...color,
+    images: imagesResult.rows.filter(img => img.color_id === color.id)
+  }));
+}
+
+// Rang kodi "#1E5AA8" ko'rinishida bo'lishi shart
+const isValidHexCode = (value) => typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value);
+
 // Mahsulotlarni bazadan o'qish uchun umumiy SELECT.
 // Bazada faqat category_id (raqam) saqlanadi, sayt esa category
 // (matn slug, masalan "parta-stullar") maydonini kutadi — shuning
 // uchun categories jadvaliga JOIN qilib slug'ni ham qaytaramiz.
 // LEFT JOIN: kategoriyasi yo'q mahsulot ham ro'yxatdan tushib qolmaydi.
+// has_colors — mahsulotda rang variantlari bormi?
+// Mahsulot kartochkasida "Savatga" tugmasi shu maydonga qarab ishlaydi:
+// rangli mahsulotda avval rang tanlash kerak, shuning uchun kartochkadan
+// to'g'ridan-to'g'ri savatga qo'shilmaydi.
 const PRODUCT_SELECT = `
-  SELECT p.*, c.slug AS category
+  SELECT p.*, c.slug AS category,
+         EXISTS (SELECT 1 FROM product_colors pc WHERE pc.product_id = p.id) AS has_colors
   FROM products p
   LEFT JOIN categories c ON c.id = p.category_id
 `;
@@ -234,6 +269,8 @@ router.get('/products/:id', async (req, res) => {
       if (!isAdmin) {
         product = sanitizeProductForPublic(product);
       }
+      // Rang variantlarini rasmlari bilan qo'shamiz (bo'lmasa — bo'sh ro'yxat)
+      product.colors = await loadProductColors(product.id);
       res.json(product);
     } else {
       res.status(404).json({ message: 'Product not found' });
@@ -243,7 +280,8 @@ router.get('/products/:id', async (req, res) => {
     const prod = mockProducts.find(p => p.id === parseInt(id));
     if (prod && (isAdmin || isPubliclyVisible(prod))) {
       const product = isAdmin ? prod : sanitizeProductForPublic(prod);
-      res.json(product);
+      // Zaxira ro'yxatda ranglar saqlanmaydi
+      res.json({ ...product, colors: [] });
     } else {
       res.status(404).json({ message: 'Product not found' });
     }
@@ -626,6 +664,156 @@ router.delete('/products/:id', authMiddleware, async (req, res) => {
     } else {
       res.status(404).json({ message: 'Product not found' });
     }
+  }
+});
+
+// ==========================================
+// 5. RANG VARIANTLARI (admin uchun)
+// ==========================================
+//
+// Ranglar ixtiyoriy: rangi yo'q mahsulot avvalgidek ishlayveradi.
+// Rasmlar mavjud /api/upload orqali yuklanadi, bu yerga faqat
+// yuklangan rasmning manzili (/uploads/...) yoziladi.
+//
+// Bu bo'limda zaxira (mock) mantiq yo'q: baza ishlamasa ochiq xato
+// qaytadi, aks holda admin "saqlandi" deb o'ylab qolardi.
+
+// GET mahsulotning ranglari
+router.get('/products/:id/colors', async (req, res) => {
+  try {
+    const colors = await loadProductColors(req.params.id);
+    res.json(colors);
+  } catch (err) {
+    console.error('Ranglarni o\'qishda xato:', err.message);
+    res.status(500).json({ message: 'Ranglarni o\'qib bo\'lmadi' });
+  }
+});
+
+// POST yangi rang qo'shish
+router.post('/products/:id/colors', authMiddleware, async (req, res) => {
+  const { id } = req.params;
+  const { name_uz, name_ru, hex_code } = req.body;
+
+  if (!name_uz || !name_ru) {
+    return res.status(400).json({ message: 'Rang nomi o\'zbekcha va ruscha to\'ldirilishi shart' });
+  }
+  if (!isValidHexCode(hex_code)) {
+    return res.status(400).json({ message: 'Rang kodi noto\'g\'ri (masalan: #1E5AA8)' });
+  }
+
+  try {
+    // Mahsulot bormi?
+    const productCheck = await db.query('SELECT id FROM products WHERE id = $1', [id]);
+    if (productCheck.rows.length === 0) {
+      return res.status(404).json({ message: 'Mahsulot topilmadi' });
+    }
+
+    // Yangi rang ro'yxat oxiriga qo'shiladi
+    const orderResult = await db.query(
+      'SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order FROM product_colors WHERE product_id = $1',
+      [id]
+    );
+
+    const result = await db.query(
+      'INSERT INTO product_colors (product_id, name_uz, name_ru, hex_code, sort_order) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      [id, name_uz, name_ru, hex_code, orderResult.rows[0].next_order]
+    );
+
+    res.status(201).json({ ...result.rows[0], images: [] });
+  } catch (err) {
+    console.error('Rang qo\'shishda xato:', err.message);
+    res.status(500).json({ message: 'Rangni saqlab bo\'lmadi' });
+  }
+});
+
+// PUT rangni tahrirlash (nomi va kodi)
+router.put('/colors/:colorId', authMiddleware, async (req, res) => {
+  const { colorId } = req.params;
+  const { name_uz, name_ru, hex_code } = req.body;
+
+  if (!name_uz || !name_ru) {
+    return res.status(400).json({ message: 'Rang nomi o\'zbekcha va ruscha to\'ldirilishi shart' });
+  }
+  if (!isValidHexCode(hex_code)) {
+    return res.status(400).json({ message: 'Rang kodi noto\'g\'ri (masalan: #1E5AA8)' });
+  }
+
+  try {
+    const result = await db.query(
+      'UPDATE product_colors SET name_uz = $1, name_ru = $2, hex_code = $3 WHERE id = $4 RETURNING *',
+      [name_uz, name_ru, hex_code, colorId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Rang topilmadi' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Rangni tahrirlashda xato:', err.message);
+    res.status(500).json({ message: 'Rangni yangilab bo\'lmadi' });
+  }
+});
+
+// DELETE rangni o'chirish (rasmlari ham baza tomonidan o'chadi)
+router.delete('/colors/:colorId', authMiddleware, async (req, res) => {
+  try {
+    const result = await db.query('DELETE FROM product_colors WHERE id = $1 RETURNING id', [req.params.colorId]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Rang topilmadi' });
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Rangni o\'chirishda xato:', err.message);
+    res.status(500).json({ message: 'Rangni o\'chirib bo\'lmadi' });
+  }
+});
+
+// POST rangga rasm qo'shish
+router.post('/colors/:colorId/images', authMiddleware, async (req, res) => {
+  const { colorId } = req.params;
+  const { image_url } = req.body;
+
+  if (!image_url) {
+    return res.status(400).json({ message: 'Rasm manzili yuborilmadi' });
+  }
+
+  try {
+    const colorCheck = await db.query('SELECT id FROM product_colors WHERE id = $1', [colorId]);
+    if (colorCheck.rows.length === 0) {
+      return res.status(404).json({ message: 'Rang topilmadi' });
+    }
+
+    const orderResult = await db.query(
+      'SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order FROM product_color_images WHERE color_id = $1',
+      [colorId]
+    );
+
+    const result = await db.query(
+      'INSERT INTO product_color_images (color_id, image_url, sort_order) VALUES ($1, $2, $3) RETURNING *',
+      [colorId, image_url, orderResult.rows[0].next_order]
+    );
+
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('Rang rasmini saqlashda xato:', err.message);
+    res.status(500).json({ message: 'Rasmni saqlab bo\'lmadi' });
+  }
+});
+
+// DELETE rang rasmini o'chirish
+router.delete('/colors/images/:imageId', authMiddleware, async (req, res) => {
+  try {
+    const result = await db.query(
+      'DELETE FROM product_color_images WHERE id = $1 RETURNING id',
+      [req.params.imageId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Rasm topilmadi' });
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Rang rasmini o\'chirishda xato:', err.message);
+    res.status(500).json({ message: 'Rasmni o\'chirib bo\'lmadi' });
   }
 });
 

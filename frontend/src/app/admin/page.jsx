@@ -26,6 +26,12 @@ export default function AdminPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
 
+  // Rang variantlari (faqat mavjud mahsulotni tahrirlashda ishlaydi)
+  const [colors, setColors] = useState([]);
+  const [colorForm, setColorForm] = useState({ name_uz: '', name_ru: '', hex_code: '#1E5AA8' });
+  const [colorError, setColorError] = useState('');
+  const [colorImageUploadingId, setColorImageUploadingId] = useState(null);
+
   // Product Form States
   const [productForm, setProductForm] = useState({
     name_uz: '',
@@ -315,11 +321,188 @@ export default function AdminPage() {
     }
   };
 
+  // ===== RANG VARIANTLARI =====
+
+  const fetchColors = async (productId) => {
+    try {
+      const res = await fetch(`${backendUrl}/products/${productId}/colors`);
+      if (res.ok) {
+        setColors(await res.json());
+      }
+    } catch (err) {
+      console.error('Ranglarni yuklashda xato:', err);
+    }
+  };
+
+  const handleColorFormChange = (e) => {
+    const { name, value } = e.target;
+    setColorForm(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleAddColor = async (e) => {
+    e.preventDefault();
+    setColorError('');
+
+    if (!colorForm.name_uz.trim() || !colorForm.name_ru.trim()) {
+      setColorError(language === 'uz'
+        ? 'Rang nomini ikkala tilda ham yozing.'
+        : 'Введите название цвета на обоих языках.');
+      return;
+    }
+
+    try {
+      const res = await fetch(`${backendUrl}/products/${editingId}/colors`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(colorForm),
+        credentials: 'include'
+      });
+
+      if (res.status === 401 || res.status === 403) {
+        setIsAuthenticated(false);
+        return;
+      }
+
+      if (res.ok) {
+        setColorForm({ name_uz: '', name_ru: '', hex_code: '#1E5AA8' });
+        fetchColors(editingId);
+      } else {
+        const data = await res.json();
+        setColorError(data.message || 'Rangni saqlab bo\'lmadi.');
+      }
+    } catch (err) {
+      setColorError('Server connection error.');
+    }
+  };
+
+  const handleDeleteColor = async (colorId) => {
+    const confirmText = language === 'uz'
+      ? 'Bu rang va uning barcha rasmlari o\'chiriladi. Davom etamizmi?'
+      : 'Этот цвет и все его изображения будут удалены. Продолжить?';
+    if (!window.confirm(confirmText)) return;
+
+    setColorError('');
+    try {
+      const res = await fetch(`${backendUrl}/colors/${colorId}`, {
+        method: 'DELETE',
+        credentials: 'include'
+      });
+
+      if (res.status === 401 || res.status === 403) {
+        setIsAuthenticated(false);
+        return;
+      }
+
+      if (res.ok) {
+        fetchColors(editingId);
+      } else {
+        setColorError(language === 'uz' ? 'Rangni o\'chirib bo\'lmadi.' : 'Не удалось удалить цвет.');
+      }
+    } catch (err) {
+      setColorError('Server connection error.');
+    }
+  };
+
+  // Rangga rasm yuklash: avval /api/upload ga fayl, keyin qaytgan
+  // manzilni rangga bog'laymiz
+  const handleColorImageUpload = async (colorId, e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+
+    setColorError('');
+
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+      setColorError(language === 'uz'
+        ? 'Faqat JPG, PNG yoki WEBP formatidagi rasmlarni yuklash mumkin.'
+        : 'Можно загружать только изображения в формате JPG, PNG или WEBP.');
+      e.target.value = '';
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setColorError(language === 'uz'
+        ? 'Rasm hajmi 5 MB dan oshmasligi kerak.'
+        : 'Размер изображения не должен превышать 5 МБ.');
+      e.target.value = '';
+      return;
+    }
+
+    setColorImageUploadingId(colorId);
+
+    try {
+      const formData = new FormData();
+      formData.append('image', file);
+
+      const uploadRes = await fetch(`${backendUrl}/upload`, {
+        method: 'POST',
+        body: formData,
+        credentials: 'include'
+      });
+
+      if (uploadRes.status === 401 || uploadRes.status === 403) {
+        setIsAuthenticated(false);
+        return;
+      }
+
+      if (!uploadRes.ok) {
+        setColorError(language === 'uz' ? 'Rasmni yuklab bo\'lmadi.' : 'Не удалось загрузить изображение.');
+        return;
+      }
+
+      const { url } = await uploadRes.json();
+
+      const linkRes = await fetch(`${backendUrl}/colors/${colorId}/images`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image_url: url }),
+        credentials: 'include'
+      });
+
+      if (linkRes.ok) {
+        fetchColors(editingId);
+      } else {
+        setColorError(language === 'uz' ? 'Rasmni rangga bog\'lab bo\'lmadi.' : 'Не удалось привязать изображение к цвету.');
+      }
+    } catch (err) {
+      setColorError('Server connection error.');
+    } finally {
+      setColorImageUploadingId(null);
+      e.target.value = '';
+    }
+  };
+
+  const handleDeleteColorImage = async (imageId) => {
+    setColorError('');
+    try {
+      const res = await fetch(`${backendUrl}/colors/images/${imageId}`, {
+        method: 'DELETE',
+        credentials: 'include'
+      });
+
+      if (res.status === 401 || res.status === 403) {
+        setIsAuthenticated(false);
+        return;
+      }
+
+      if (res.ok) {
+        fetchColors(editingId);
+      } else {
+        setColorError(language === 'uz' ? 'Rasmni o\'chirib bo\'lmadi.' : 'Не удалось удалить изображение.');
+      }
+    } catch (err) {
+      setColorError('Server connection error.');
+    }
+  };
+
   // 7. Load Product into Form for Edit
   const handleEditProduct = (prod) => {
     setIsEditing(true);
     setEditingId(prod.id);
     setUploadError('');
+    setColorError('');
+    setColorForm({ name_uz: '', name_ru: '', hex_code: '#1E5AA8' });
+    fetchColors(prod.id);
     setProductForm({
       name_uz: prod.name_uz || '',
       name_ru: prod.name_ru || '',
@@ -337,6 +520,9 @@ export default function AdminPage() {
     setIsEditing(false);
     setEditingId(null);
     setUploadError('');
+    setColorError('');
+    setColors([]);
+    setColorForm({ name_uz: '', name_ru: '', hex_code: '#1E5AA8' });
     setProductForm({
       name_uz: '',
       name_ru: '',
@@ -685,6 +871,127 @@ export default function AdminPage() {
                   )}
                 </div>
               </form>
+
+              {/* ===== RANG VARIANTLARI ===== */}
+              <div className="colors-section">
+                <h3 className="colors-title">
+                  {language === 'uz' ? 'Rang variantlari' : 'Цветовые варианты'}
+                </h3>
+
+                {!isEditing ? (
+                  <p className="colors-hint">
+                    {language === 'uz'
+                      ? 'Ranglar qo\'shish uchun avval mahsulotni saqlang, so\'ng uni ro\'yxatdan "Tahrirlash" tugmasi bilan oching.'
+                      : 'Чтобы добавить цвета, сначала сохраните товар, затем откройте его кнопкой «Редактировать» из списка.'}
+                  </p>
+                ) : (
+                  <>
+                    <p className="colors-hint">
+                      {language === 'uz'
+                        ? 'Ranglar ixtiyoriy. Rang qo\'shmasangiz, mahsulot avvalgidek ishlaydi.'
+                        : 'Цвета необязательны. Без них товар работает как обычно.'}
+                    </p>
+
+                    {colorError && <div className="error-banner">{colorError}</div>}
+
+                    {/* Mavjud ranglar */}
+                    {colors.map(color => (
+                      <div className="color-card" key={color.id}>
+                        <div className="color-card-head">
+                          <span
+                            className="color-dot"
+                            style={{ backgroundColor: color.hex_code }}
+                            title={color.hex_code}
+                          />
+                          <span className="color-name">
+                            {color.name_uz} / {color.name_ru}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteColor(color.id)}
+                            className="action-link delete-link"
+                          >
+                            {language === 'uz' ? 'O\'chirish' : 'Удалить'}
+                          </button>
+                        </div>
+
+                        {/* Shu rangning rasmlari */}
+                        <div className="color-images-row">
+                          {color.images.map(img => (
+                            <div className="color-image-item" key={img.id}>
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={getImageSrc(img.image_url)}
+                                alt=""
+                                className="color-image-thumb"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteColorImage(img.id)}
+                                className="color-image-remove"
+                                aria-label={language === 'uz' ? 'Rasmni o\'chirish' : 'Удалить изображение'}
+                              >
+                                ×
+                              </button>
+                            </div>
+                          ))}
+
+                          {color.images.length === 0 && (
+                            <span className="colors-hint">
+                              {language === 'uz' ? 'Bu rangda hali rasm yo\'q' : 'У этого цвета пока нет изображений'}
+                            </span>
+                          )}
+                        </div>
+
+                        <label className="btn-secondary color-upload-btn">
+                          {colorImageUploadingId === color.id
+                            ? (language === 'uz' ? 'Yuklanmoqda...' : 'Загрузка...')
+                            : (language === 'uz' ? '+ Rasm qo\'shish' : '+ Добавить фото')}
+                          <input
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp"
+                            onChange={(e) => handleColorImageUpload(color.id, e)}
+                            disabled={colorImageUploadingId !== null}
+                            hidden
+                          />
+                        </label>
+                      </div>
+                    ))}
+
+                    {/* Yangi rang qo'shish */}
+                    <div className="color-add-row">
+                      <input
+                        type="text"
+                        name="name_uz"
+                        value={colorForm.name_uz}
+                        onChange={handleColorFormChange}
+                        placeholder={language === 'uz' ? 'Rang nomi (uz)' : 'Название (uz)'}
+                        className="form-input"
+                      />
+                      <input
+                        type="text"
+                        name="name_ru"
+                        value={colorForm.name_ru}
+                        onChange={handleColorFormChange}
+                        placeholder={language === 'uz' ? 'Rang nomi (ru)' : 'Название (ru)'}
+                        className="form-input"
+                      />
+                      <input
+                        type="color"
+                        name="hex_code"
+                        value={colorForm.hex_code}
+                        onChange={handleColorFormChange}
+                        className="color-picker"
+                        title={language === 'uz' ? 'Rangni tanlang' : 'Выберите цвет'}
+                      />
+                      <button type="button" onClick={handleAddColor} className="btn-secondary">
+                        {language === 'uz' ? 'Qo\'shish' : 'Добавить'}
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+              {/* ===== RANG VARIANTLARI TUGADI ===== */}
             </div>
 
             {/* Right: Products List */}
@@ -1280,6 +1587,120 @@ export default function AdminPage() {
           font-size: 13px;
           color: var(--secondary-text);
           margin-bottom: 16px;
+        }
+
+        /* ===== Rang variantlari ===== */
+        .colors-section {
+          margin-top: 32px;
+          padding-top: 24px;
+          border-top: 1px solid var(--border-color);
+        }
+
+        .colors-title {
+          font-size: 15px;
+          font-weight: 700;
+          margin: 0 0 8px;
+        }
+
+        .colors-hint {
+          font-size: 12px;
+          color: var(--secondary-text);
+          margin: 0 0 16px;
+        }
+
+        .color-card {
+          border: 1px solid var(--border-color);
+          border-radius: 4px;
+          padding: 12px;
+          margin-bottom: 12px;
+        }
+
+        .color-card-head {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          margin-bottom: 10px;
+        }
+
+        .color-dot {
+          width: 22px;
+          height: 22px;
+          border-radius: 50%;
+          border: 1px solid var(--border-color);
+          flex-shrink: 0;
+        }
+
+        .color-name {
+          font-size: 13px;
+          font-weight: 600;
+          flex-grow: 1;
+        }
+
+        .color-images-row {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          align-items: center;
+          margin-bottom: 10px;
+        }
+
+        .color-image-item {
+          position: relative;
+        }
+
+        .color-image-thumb {
+          width: 56px;
+          height: 56px;
+          object-fit: cover;
+          border-radius: 3px;
+          border: 1px solid var(--border-color);
+          display: block;
+        }
+
+        .color-image-remove {
+          position: absolute;
+          top: -6px;
+          right: -6px;
+          width: 20px;
+          height: 20px;
+          border-radius: 50%;
+          background-color: #c62828;
+          color: #fff;
+          font-size: 14px;
+          line-height: 1;
+          border: none;
+          cursor: pointer;
+        }
+
+        .color-upload-btn {
+          display: inline-block;
+          font-size: 12px;
+          padding: 6px 12px;
+          cursor: pointer;
+        }
+
+        .color-add-row {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          align-items: center;
+          margin-top: 16px;
+        }
+
+        .color-add-row .form-input {
+          flex: 1 1 120px;
+          min-width: 0;
+        }
+
+        .color-picker {
+          width: 44px;
+          height: 38px;
+          padding: 2px;
+          border: 1px solid var(--border-color);
+          border-radius: 3px;
+          background: none;
+          cursor: pointer;
+          flex-shrink: 0;
         }
 
         .order-items-bullet {
