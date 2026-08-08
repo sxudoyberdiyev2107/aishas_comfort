@@ -754,6 +754,34 @@ router.put('/colors/:colorId', authMiddleware, async (req, res) => {
   }
 });
 
+// PATCH rangning "mavjud / tugagan" holati
+//
+// Tugagan rang saytdan o'chmaydi — u xira, ustidan chiziq o'tgan
+// doiracha bo'lib turadi va tanlab bo'lmaydi. Ya'ni "bu rang bor edi,
+// hozir tugagan" degan belgi.
+router.patch('/colors/:colorId/availability', authMiddleware, async (req, res) => {
+  const { is_available } = req.body;
+
+  if (typeof is_available !== 'boolean') {
+    return res.status(400).json({ message: 'is_available maydoni true yoki false bo\'lishi kerak' });
+  }
+
+  try {
+    const result = await db.query(
+      'UPDATE product_colors SET is_available = $1 WHERE id = $2 RETURNING *',
+      [is_available, req.params.colorId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Rang topilmadi' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Rang holatini o\'zgartirishda xato:', err.message);
+    res.status(500).json({ message: 'Rang holatini o\'zgartirib bo\'lmadi' });
+  }
+});
+
 // DELETE rangni o'chirish (rasmlari ham baza tomonidan o'chadi)
 router.delete('/colors/:colorId', authMiddleware, async (req, res) => {
   try {

@@ -6,6 +6,11 @@
 -- Keyingi o'zgarishlar database/migrations/ papkasidagi fayllar
 -- orqali, tartib bilan qo'shiladi.
 --
+-- TO'LIQ TARTIB (bo'sh bazada):
+--   1) schema.sql                                (shu fayl)
+--   2) migrations/001_colors_and_visibility.sql  (ranglar + yashirish/arxiv)
+--   3) migrations/002_color_availability.sql     (rang mavjudligi)
+--
 -- Hammasi "IF NOT EXISTS" bilan yozilgan: ikki marta ishga
 -- tushirilsa ham xato bermaydi va mavjud ma'lumotni buzmaydi.
 -- ============================================================

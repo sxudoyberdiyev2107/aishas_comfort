@@ -375,6 +375,35 @@ export default function AdminPage() {
     }
   };
 
+  // Rangning "mavjud / tugagan" holatini almashtirish.
+  // Tugagan rang saytdan yo'qolmaydi — xira belgi bo'lib turadi.
+  const handleToggleColorAvailability = async (color) => {
+    setColorError('');
+    try {
+      const res = await fetch(`${backendUrl}/colors/${color.id}/availability`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_available: !color.is_available }),
+        credentials: 'include'
+      });
+
+      if (res.status === 401 || res.status === 403) {
+        setIsAuthenticated(false);
+        return;
+      }
+
+      if (res.ok) {
+        fetchColors(editingId);
+      } else {
+        setColorError(language === 'uz'
+          ? 'Rang holatini o\'zgartirib bo\'lmadi.'
+          : 'Не удалось изменить статус цвета.');
+      }
+    } catch (err) {
+      setColorError('Server connection error.');
+    }
+  };
+
   const handleDeleteColor = async (colorId) => {
     const confirmText = language === 'uz'
       ? 'Bu rang va uning barcha rasmlari o\'chiriladi. Davom etamizmi?'
@@ -899,13 +928,29 @@ export default function AdminPage() {
                       <div className="color-card" key={color.id}>
                         <div className="color-card-head">
                           <span
-                            className="color-dot"
+                            className={`color-dot ${color.is_available ? '' : 'color-dot-out'}`}
                             style={{ backgroundColor: color.hex_code }}
                             title={color.hex_code}
                           />
                           <span className="color-name">
                             {color.name_uz} / {color.name_ru}
                           </span>
+
+                          {/* Mavjud / tugagan kaliti */}
+                          <label className="availability-toggle">
+                            <input
+                              type="checkbox"
+                              checked={color.is_available}
+                              onChange={() => handleToggleColorAvailability(color)}
+                            />
+                            <span className="toggle-track"><span className="toggle-knob" /></span>
+                            <span className={`toggle-label ${color.is_available ? 'is-on' : 'is-off'}`}>
+                              {color.is_available
+                                ? (language === 'uz' ? 'Mavjud' : 'В наличии')
+                                : (language === 'uz' ? 'Tugagan' : 'Нет в наличии')}
+                            </span>
+                          </label>
+
                           <button
                             type="button"
                             onClick={() => handleDeleteColor(color.id)}
@@ -1634,6 +1679,88 @@ export default function AdminPage() {
           font-size: 13px;
           font-weight: 600;
           flex-grow: 1;
+        }
+
+        /* Tugagan rang doirachasi: xira va ustidan chiziq */
+        .color-dot-out {
+          opacity: 0.4;
+          position: relative;
+        }
+
+        .color-dot-out::after {
+          content: '';
+          position: absolute;
+          left: -2px;
+          right: -2px;
+          top: 50%;
+          height: 1px;
+          background-color: var(--primary-text);
+          transform: rotate(-45deg);
+        }
+
+        /* Mavjud / tugagan kaliti */
+        .availability-toggle {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          cursor: pointer;
+          user-select: none;
+        }
+
+        .availability-toggle input {
+          position: absolute;
+          opacity: 0;
+          width: 0;
+          height: 0;
+        }
+
+        .toggle-track {
+          width: 34px;
+          height: 18px;
+          border-radius: 9px;
+          background-color: #bdbdbd;
+          display: inline-block;
+          position: relative;
+          transition: background-color 200ms ease;
+          flex-shrink: 0;
+        }
+
+        .toggle-knob {
+          position: absolute;
+          top: 2px;
+          left: 2px;
+          width: 14px;
+          height: 14px;
+          border-radius: 50%;
+          background-color: #fff;
+          transition: transform 200ms ease;
+        }
+
+        .availability-toggle input:checked + .toggle-track {
+          background-color: #2e7d32;
+        }
+
+        .availability-toggle input:checked + .toggle-track .toggle-knob {
+          transform: translateX(16px);
+        }
+
+        .availability-toggle input:focus-visible + .toggle-track {
+          outline: 2px solid var(--cta-orange);
+          outline-offset: 2px;
+        }
+
+        .toggle-label {
+          font-size: 12px;
+          font-weight: 600;
+          white-space: nowrap;
+        }
+
+        .toggle-label.is-on {
+          color: #2e7d32;
+        }
+
+        .toggle-label.is-off {
+          color: var(--secondary-text);
         }
 
         .color-images-row {
