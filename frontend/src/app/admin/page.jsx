@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLanguage } from '../../context/LanguageContext';
 import { getImageSrc } from '../../lib/imageUrl';
+import { COLOR_PALETTE } from '../../lib/colorPalette';
 
 export default function AdminPage() {
   const { t, language } = useLanguage();
@@ -337,6 +338,17 @@ export default function AdminPage() {
   const handleColorFormChange = (e) => {
     const { name, value } = e.target;
     setColorForm(prev => ({ ...prev, [name]: value }));
+  };
+
+  // Palitradan rang tanlash: kod va nomlar birdaniga to'ldiriladi.
+  // Nomni keyin qo'lda o'zgartirsa ham bo'ladi.
+  const handlePaletteSelect = (paletteColor) => {
+    setColorError('');
+    setColorForm({
+      name_uz: paletteColor.name_uz,
+      name_ru: paletteColor.name_ru,
+      hex_code: paletteColor.hex_code
+    });
   };
 
   const handleAddColor = async (e) => {
@@ -1004,34 +1016,65 @@ export default function AdminPage() {
                     ))}
 
                     {/* Yangi rang qo'shish */}
-                    <div className="color-add-row">
-                      <input
-                        type="text"
-                        name="name_uz"
-                        value={colorForm.name_uz}
-                        onChange={handleColorFormChange}
-                        placeholder={language === 'uz' ? 'Rang nomi (uz)' : 'Название (uz)'}
-                        className="form-input"
-                      />
-                      <input
-                        type="text"
-                        name="name_ru"
-                        value={colorForm.name_ru}
-                        onChange={handleColorFormChange}
-                        placeholder={language === 'uz' ? 'Rang nomi (ru)' : 'Название (ru)'}
-                        className="form-input"
-                      />
-                      <input
-                        type="color"
-                        name="hex_code"
-                        value={colorForm.hex_code}
-                        onChange={handleColorFormChange}
-                        className="color-picker"
-                        title={language === 'uz' ? 'Rangni tanlang' : 'Выберите цвет'}
-                      />
-                      <button type="button" onClick={handleAddColor} className="btn-secondary">
-                        {language === 'uz' ? 'Qo\'shish' : 'Добавить'}
-                      </button>
+                    <div className="color-add-block">
+                      <p className="colors-hint">
+                        {language === 'uz'
+                          ? 'Palitradan rang tanlang — nomi avtomatik to\'ldiriladi.'
+                          : 'Выберите цвет из палитры — название заполнится автоматически.'}
+                      </p>
+
+                      <div className="palette-grid">
+                        {COLOR_PALETTE.map(paletteColor => {
+                          const isPicked = colorForm.hex_code.toUpperCase() === paletteColor.hex_code;
+                          return (
+                            <button
+                              type="button"
+                              key={paletteColor.hex_code}
+                              onClick={() => handlePaletteSelect(paletteColor)}
+                              className={`palette-item ${isPicked ? 'picked' : ''}`}
+                              title={paletteColor.hex_code}
+                            >
+                              <span
+                                className="palette-dot"
+                                style={{ backgroundColor: paletteColor.hex_code }}
+                              />
+                              <span className="palette-name">
+                                {language === 'uz' ? paletteColor.name_uz : paletteColor.name_ru}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      <div className="color-add-row">
+                        <input
+                          type="text"
+                          name="name_uz"
+                          value={colorForm.name_uz}
+                          onChange={handleColorFormChange}
+                          placeholder={language === 'uz' ? 'Rang nomi (uz)' : 'Название (uz)'}
+                          className="form-input"
+                        />
+                        <input
+                          type="text"
+                          name="name_ru"
+                          value={colorForm.name_ru}
+                          onChange={handleColorFormChange}
+                          placeholder={language === 'uz' ? 'Rang nomi (ru)' : 'Название (ru)'}
+                          className="form-input"
+                        />
+                        <input
+                          type="color"
+                          name="hex_code"
+                          value={colorForm.hex_code}
+                          onChange={handleColorFormChange}
+                          className="color-picker"
+                          title={language === 'uz' ? 'Boshqa rang tanlash' : 'Выбрать другой цвет'}
+                        />
+                        <button type="button" onClick={handleAddColor} className="btn-secondary">
+                          {language === 'uz' ? 'Qo\'shish' : 'Добавить'}
+                        </button>
+                      </div>
                     </div>
                   </>
                 )}
@@ -1806,12 +1849,60 @@ export default function AdminPage() {
           cursor: pointer;
         }
 
+        .color-add-block {
+          margin-top: 16px;
+          padding-top: 16px;
+          border-top: 1px dashed var(--border-color);
+        }
+
+        /* Tayyor ranglar palitrasi */
+        .palette-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+          gap: 8px;
+          margin-bottom: 16px;
+        }
+
+        .palette-item {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 4px;
+          padding: 6px 2px;
+          border: 1px solid transparent;
+          border-radius: 4px;
+          background: none;
+          cursor: pointer;
+        }
+
+        .palette-item:hover {
+          border-color: var(--border-color);
+        }
+
+        .palette-item.picked {
+          border-color: var(--cta-orange);
+          background-color: rgba(255, 152, 0, 0.08);
+        }
+
+        .palette-dot {
+          width: 28px;
+          height: 28px;
+          border-radius: 50%;
+          border: 1px solid var(--border-color);
+        }
+
+        .palette-name {
+          font-size: 10px;
+          line-height: 1.2;
+          text-align: center;
+          color: var(--secondary-text);
+        }
+
         .color-add-row {
           display: flex;
           flex-wrap: wrap;
           gap: 8px;
           align-items: center;
-          margin-top: 16px;
         }
 
         .color-add-row .form-input {

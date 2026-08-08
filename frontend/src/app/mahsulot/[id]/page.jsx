@@ -29,6 +29,10 @@ export default function ProductDetailPage({ params }) {
   const [quantity, setQuantity] = useState(1);
   const [isAdding, setIsAdding] = useState(false);
 
+  // Tanlangan rang va ko'rsatilayotgan rasm
+  const [selectedColorId, setSelectedColorId] = useState(null);
+  const [activeImageIndex, setActiveImageIndex] = useState(0);
+
   // Localized mock products
   const mockProducts = [
     {
@@ -105,6 +109,17 @@ export default function ProductDetailPage({ params }) {
     }
   }, [id]);
 
+  // Mahsulot yuklangach birinchi MAVJUD rangni tanlaymiz.
+  // Tugagan ranglar o'tkazib yuboriladi. Hammasi tugagan bo'lsa —
+  // hech qaysi rang tanlanmaydi.
+  useEffect(() => {
+    if (!product) return;
+    const colorList = product.colors || [];
+    const firstAvailable = colorList.find(c => c.is_available);
+    setSelectedColorId(firstAvailable ? firstAvailable.id : null);
+    setActiveImageIndex(0);
+  }, [product]);
+
   if (!product) {
     return (
       <div className="container product-not-found">
@@ -117,6 +132,32 @@ export default function ProductDetailPage({ params }) {
   const desc = language === 'uz' ? product.desc_uz : product.desc_ru;
   const isOnSale = product.old_price && parseFloat(product.old_price) > parseFloat(product.price);
   const embedUrl = getYouTubeEmbedUrl(product.video_url);
+
+  // ===== RANG VARIANTLARI =====
+  // Rangi yo'q mahsulot avvalgidek ishlaydi: colors bo'sh bo'ladi va
+  // quyidagi bloklar umuman chizilmaydi.
+  const colors = product.colors || [];
+  const hasColors = colors.length > 0;
+  const allColorsOut = hasColors && !colors.some(c => c.is_available);
+  const selectedColor = colors.find(c => c.id === selectedColorId) || null;
+
+  // Galereya: tanlangan rangning rasmlari, ular bo'lmasa mahsulotning
+  // asosiy rasmi
+  const colorImages = selectedColor?.images || [];
+  const galleryImages = colorImages.length > 0
+    ? colorImages.map(img => img.image_url)
+    : (product.image_url ? [product.image_url] : []);
+
+  const safeImageIndex = Math.min(activeImageIndex, Math.max(galleryImages.length - 1, 0));
+  const mainImage = galleryImages[safeImageIndex] || product.image_url;
+
+  const handleSelectColor = (color) => {
+    // Tugagan rang bosilganda hech narsa bo'lmaydi — u shunchaki
+    // "bu rang bor edi, hozir tugagan" degan belgi
+    if (!color.is_available) return;
+    setSelectedColorId(color.id);
+    setActiveImageIndex(0);
+  };
 
   const incrementQty = () => {
     if (quantity < 10) setQuantity(quantity + 1);
@@ -165,13 +206,31 @@ export default function ProductDetailPage({ params }) {
           <div className="detail-image-wrapper">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={getImageSrc(product.image_url)}
+              src={getImageSrc(mainImage)}
               alt={name}
               className="detail-image"
             />
             {product.is_new && <span className="detail-badge badge-new">{t('admin.newBadge')}</span>}
             {isOnSale && <span className="detail-badge badge-sale">{t('admin.saleBadge')}</span>}
           </div>
+
+          {/* Kichik rasmlar galereyasi (bittadan ko'p rasm bo'lsa) */}
+          {galleryImages.length > 1 && (
+            <div className="detail-thumbs">
+              {galleryImages.map((imgUrl, idx) => (
+                <button
+                  key={`${imgUrl}-${idx}`}
+                  type="button"
+                  onClick={() => setActiveImageIndex(idx)}
+                  className={`detail-thumb ${idx === safeImageIndex ? 'active' : ''}`}
+                  aria-label={`${name} — ${idx + 1}`}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={getImageSrc(imgUrl)} alt="" />
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* YouTube Video Embed */}
           {embedUrl && (
@@ -227,6 +286,50 @@ export default function ProductDetailPage({ params }) {
 
           <p className="detail-desc">{desc}</p>
 
+          {/* Rang variantlari */}
+          {hasColors && (
+            <div className="color-select-block">
+              <div className="color-select-head">
+                <span className="color-select-label">
+                  {language === 'uz' ? 'Rang:' : 'Цвет:'}
+                </span>
+                {selectedColor && (
+                  <span className="color-select-value">
+                    {language === 'uz' ? selectedColor.name_uz : selectedColor.name_ru}
+                  </span>
+                )}
+              </div>
+
+              <div className="color-swatches">
+                {colors.map(color => {
+                  const colorName = language === 'uz' ? color.name_uz : color.name_ru;
+                  const outText = language === 'uz' ? 'Tugagan' : 'Нет в наличии';
+                  const label = color.is_available ? colorName : `${colorName} — ${outText}`;
+                  return (
+                    <button
+                      key={color.id}
+                      type="button"
+                      onClick={() => handleSelectColor(color)}
+                      className={`color-swatch${selectedColorId === color.id ? ' selected' : ''}${color.is_available ? '' : ' out'}`}
+                      style={{ backgroundColor: color.hex_code }}
+                      title={label}
+                      aria-label={label}
+                      aria-disabled={!color.is_available}
+                    />
+                  );
+                })}
+              </div>
+
+              {allColorsOut && (
+                <p className="colors-out-note">
+                  {language === 'uz'
+                    ? 'Hozircha barcha ranglar tugagan.'
+                    : 'Сейчас все цвета закончились.'}
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="purchase-controls">
             {/* Quantity selector */}
             <div className="quantity-selector">
@@ -234,6 +337,7 @@ export default function ProductDetailPage({ params }) {
                 onClick={decrementQty}
                 className="qty-btn"
                 aria-label="Decrease quantity"
+                disabled={allColorsOut}
               >
                 -
               </button>
@@ -242,6 +346,7 @@ export default function ProductDetailPage({ params }) {
                 onClick={incrementQty}
                 className="qty-btn"
                 aria-label="Increase quantity"
+                disabled={allColorsOut}
               >
                 +
               </button>
@@ -250,10 +355,12 @@ export default function ProductDetailPage({ params }) {
             {/* Add To Cart Button */}
             <button
               onClick={handleAddToCart}
-              disabled={isAdding}
+              disabled={isAdding || allColorsOut}
               className={`btn-primary btn-detail-cart ${isAdding ? 'adding' : ''}`}
             >
-              {isAdding ? t('products.added') : t('products.addToCart')}
+              {allColorsOut
+                ? (language === 'uz' ? 'Tugagan' : 'Нет в наличии')
+                : (isAdding ? t('products.added') : t('products.addToCart'))}
             </button>
           </div>
         </div>
@@ -400,6 +507,118 @@ export default function ProductDetailPage({ params }) {
           font-size: 15px;
           color: var(--secondary-text);
           line-height: 1.6;
+        }
+
+        /* Kichik rasmlar galereyasi */
+        .detail-thumbs {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          margin-top: 12px;
+        }
+
+        .detail-thumb {
+          width: 68px;
+          height: 68px;
+          padding: 0;
+          border: 1px solid var(--border-color);
+          border-radius: 3px;
+          overflow: hidden;
+          background: none;
+          cursor: pointer;
+          transition: border-color 150ms ease;
+        }
+
+        .detail-thumb:hover {
+          border-color: var(--primary-dark);
+        }
+
+        .detail-thumb.active {
+          border-color: var(--primary-dark);
+          border-width: 2px;
+        }
+
+        .detail-thumb img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
+        }
+
+        /* Rang tanlash */
+        .color-select-block {
+          margin-bottom: 8px;
+        }
+
+        .color-select-head {
+          display: flex;
+          align-items: baseline;
+          gap: 6px;
+          margin-bottom: 10px;
+        }
+
+        .color-select-label {
+          font-size: 14px;
+          color: var(--secondary-text);
+        }
+
+        .color-select-value {
+          font-size: 14px;
+          font-weight: 600;
+          color: var(--primary-text);
+        }
+
+        .color-swatches {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 10px;
+        }
+
+        .color-swatch {
+          width: 34px;
+          height: 34px;
+          border-radius: 50%;
+          border: 1px solid var(--border-color);
+          padding: 0;
+          cursor: pointer;
+          position: relative;
+          transition: transform 150ms ease, box-shadow 150ms ease;
+        }
+
+        .color-swatch:hover {
+          transform: scale(1.08);
+        }
+
+        .color-swatch.selected {
+          box-shadow: 0 0 0 2px var(--white-surface), 0 0 0 4px var(--primary-dark);
+        }
+
+        /* Tugagan rang: kulrang, xira, ustidan qiya chiziq, tanlanmaydi */
+        .color-swatch.out {
+          filter: grayscale(100%);
+          opacity: 0.45;
+          cursor: not-allowed;
+        }
+
+        .color-swatch.out:hover {
+          transform: none;
+        }
+
+        .color-swatch.out::after {
+          content: '';
+          position: absolute;
+          left: -3px;
+          right: -3px;
+          top: 50%;
+          height: 2px;
+          background-color: var(--primary-text);
+          transform: rotate(-45deg);
+        }
+
+        .colors-out-note {
+          font-size: 13px;
+          color: #c62828;
+          margin: 12px 0 0;
         }
 
         /* Purchase Controls */

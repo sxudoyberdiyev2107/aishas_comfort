@@ -25,6 +25,15 @@ export default function ProductCard({ product }) {
   const handleAddToCart = (e) => {
     e.preventDefault();
     e.stopPropagation();
+
+    // Rangli mahsulotni kartochkadan to'g'ridan-to'g'ri savatga qo'shib
+    // bo'lmaydi — avval rang tanlanishi kerak, shuning uchun mahsulot
+    // sahifasiga o'tamiz
+    if (product.has_colors) {
+      router.push(`/mahsulot/${product.id}`);
+      return;
+    }
+
     setIsAdding(true);
 
     if (typeof window !== 'undefined') {
@@ -96,7 +105,9 @@ export default function ProductCard({ product }) {
           disabled={isAdding}
           className={`btn-add-to-cart ${isAdding ? 'adding' : ''}`}
         >
-          {isAdding ? t('products.added') : t('products.addToCart')}
+          {product.has_colors
+            ? (language === 'uz' ? 'Rangni tanlash' : 'Выбрать цвет')
+            : (isAdding ? t('products.added') : t('products.addToCart'))}
         </button>
       </div>
 
