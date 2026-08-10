@@ -1266,10 +1266,12 @@ router.patch('/admin/categories/:id/archive', authMiddleware, async (req, res) =
   }
 });
 
-// DELETE kategoriyani o'chirish — FAQAT unga bog'liq mahsulot bo'lmasa.
-// Mahsulot bo'lsa o'chirmaymiz: aks holda mahsulotlar kategoriyasiz
-// qolib, saytda topilmay qolardi. Bunday holatda tushunarli xato
-// qaytaramiz (admin avval mahsulotlarni ko'chirishi yoki arxivlashi kerak).
+// DELETE kategoriyani o'chirish — FAQAT bo'sh bo'lsa (mahsulot ham,
+// pod-kategoriya ham yo'q bo'lsa). Bu ikki qoida bir uslubda ishlaydi:
+//   - mahsulot bo'lsa, ularni avval boshqa kategoriyaga ko'chirish kerak
+//   - pod-kategoriya bo'lsa, ularni avval o'chirish yoki ko'chirish kerak
+// Aks holda pod-lar avtomatik "asosiy"ga ko'tarilib, saytda chalkash paydo
+// bo'lardi.
 router.delete('/admin/categories/:id', authMiddleware, async (req, res) => {
   const { id } = req.params;
 
@@ -1285,6 +1287,19 @@ router.delete('/admin/categories/:id', authMiddleware, async (req, res) => {
     if (productCount > 0) {
       return res.status(409).json({
         message: `Bu kategoriyada mahsulotlar bor (${productCount} ta). Avval ularni boshqa kategoriyaga ko'chiring yoki arxivlang.`
+      });
+    }
+
+    // Bog'liq pod-kategoriyalar soni (arxivlanganlar ham hisobda).
+    const childCheck = await db.query(
+      'SELECT COUNT(*) AS count FROM categories WHERE parent_id = $1',
+      [id]
+    );
+    const childCount = parseInt(childCheck.rows[0].count, 10);
+
+    if (childCount > 0) {
+      return res.status(409).json({
+        message: `Bu kategoriyaning pod-kategoriyalari bor (${childCount} ta). Avval ularni o'chiring yoki boshqa ota ostiga / asosiyga ko'chiring.`
       });
     }
 

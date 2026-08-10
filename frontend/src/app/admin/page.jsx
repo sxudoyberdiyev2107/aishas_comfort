@@ -1978,8 +1978,18 @@ export default function AdminPage() {
 
         .actions-cell {
           display: flex;
-          gap: 16px;
           flex-wrap: wrap;
+          gap: 12px 16px;
+          align-items: center;
+        }
+
+        /* Gap fallback — kadrlab: agar biror sabab bilan gap qo'llanilmasa
+           tugmalar orasida bo'shliq bo'lishi uchun */
+        .actions-cell > .action-link + .action-link {
+          margin-left: 0;
+        }
+        .actions-cell > .action-link {
+          white-space: nowrap;
         }
 
         .action-link {
@@ -2014,9 +2024,13 @@ export default function AdminPage() {
           color: var(--primary-dark);
         }
 
-        /* Yashirilgan mahsulot qatori xiraroq ko'rinadi */
-        .row-hidden {
-          opacity: 0.55;
+        /* Arxivlangan / yashirilgan qator xira va biroz kulrang fonda */
+        .admin-table tr.row-hidden {
+          opacity: 0.6;
+          background-color: #fafafa;
+        }
+        .admin-table tr.row-hidden > td {
+          color: var(--secondary-text);
         }
 
         .status-badge {
