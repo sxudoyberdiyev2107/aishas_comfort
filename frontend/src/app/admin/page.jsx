@@ -753,53 +753,23 @@ export default function AdminPage() {
   const editingCategoryHasChildren = editingCategoryId !== null
     && categories.some(c => c.parent_id === editingCategoryId);
 
-  // Jadvalda bir qatorni chiqaradi. isChild — pod-kategoriyami: shunga qarab
-  // qator ozroq surilib, oldida "└" belgisi chiqadi.
-  const renderCategoryRow = (cat, isChild) => (
-    <tr key={cat.id} className={cat.is_archived ? 'row-hidden' : ''}>
-      <td>{cat.id}</td>
-      <td className={`font-medium ${isChild ? 'cat-child-cell' : ''}`}>
-        {isChild && <span className="cat-child-marker">└</span>}
-        {cat.name_uz} / {cat.name_ru}
-      </td>
-      <td><code className="slug-code">{cat.slug}</code></td>
-      <td>
-        {cat.is_archived ? (
-          <span className="status-badge status-archived">
-            {language === 'uz' ? 'Arxivlangan' : 'В архиве'}
-          </span>
-        ) : (
-          <span className="status-badge status-visible">
-            {language === 'uz' ? 'Faol' : 'Активна'}
-          </span>
-        )}
-      </td>
-      <td>
-        <div className="actions-cell">
-          <button
-            onClick={() => handleEditCategory(cat)}
-            className="action-link edit-link"
-          >
-            {language === 'uz' ? 'Tahrirlash' : 'Редактировать'}
-          </button>
-          <button
-            onClick={() => handleToggleCategoryArchive(cat)}
-            className="action-link archive-link"
-          >
-            {cat.is_archived
-              ? (language === 'uz' ? 'Arxivdan chiqarish' : 'Из архива')
-              : (language === 'uz' ? 'Arxivlash' : 'В архив')}
-          </button>
-          <button
-            onClick={() => handleDeleteCategory(cat)}
-            className="action-link delete-link"
-          >
-            {language === 'uz' ? 'O\'chirish' : 'Удалить'}
-          </button>
-        </div>
-      </td>
-    </tr>
-  );
+  // Kategoriyalarni ko'rsatish tartibi: har asosiy kategoriyadan keyin
+  // uning pod-lari (surilgan holatda). Bu tekis (flat) ro'yxatni asosiy
+  // return ichida to'g'ridan-to'g'ri map qilamiz.
+  //
+  // MUHIM: qatorlar ALOHIDA funksiyada emas, aynan return ichida chiqadi.
+  // Sababi — styled-jsx scoped stillari (`<style jsx>`) faqat shu
+  // komponentning return'idagi JSX ga jsx-hash klassini qo'shadi; alohida
+  // yordamchi funksiya qaytargan JSX ga qo'shmaydi, natijada u yerdagi
+  // `.actions-cell`, `.row-hidden`, `.cat-child-marker` kabi stillar
+  // umuman qo'llanmaydi. Shu bois inline chiqaramiz.
+  const orderedCategoryRows = [];
+  topLevelCategories.forEach(parent => {
+    orderedCategoryRows.push({ cat: parent, isChild: false });
+    (categoryChildrenByParent[parent.id] || []).forEach(child => {
+      orderedCategoryRows.push({ cat: child, isChild: true });
+    });
+  });
 
   if (authLoading) {
     return (
@@ -1511,18 +1481,54 @@ export default function AdminPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {/* Kategoriyalarni ota-bola tartibida ko'rsatamiz:
-                      har bir asosiy kategoriyadan keyin — uning pod-lari
-                      (surilgan holatda). Pod-larsiz kategoriya oddiy ko'rinadi. */}
-                  {topLevelCategories.map(parent => {
-                    const children = categoryChildrenByParent[parent.id] || [];
-                    return (
-                      <React.Fragment key={parent.id}>
-                        {renderCategoryRow(parent, false)}
-                        {children.map(child => renderCategoryRow(child, true))}
-                      </React.Fragment>
-                    );
-                  })}
+                  {/* Ota-bola tartibidagi tekis ro'yxat (yuqorida tuzilgan).
+                      Qatorlar shu yerda — return ichida — chiqadi, shunda
+                      styled-jsx stillari qo'llanadi. */}
+                  {orderedCategoryRows.map(({ cat, isChild }) => (
+                    <tr key={cat.id} className={cat.is_archived ? 'row-hidden' : ''}>
+                      <td>{cat.id}</td>
+                      <td className={`font-medium ${isChild ? 'cat-child-cell' : ''}`}>
+                        {isChild && <span className="cat-child-marker">└</span>}
+                        {cat.name_uz} / {cat.name_ru}
+                      </td>
+                      <td><code className="slug-code">{cat.slug}</code></td>
+                      <td>
+                        {cat.is_archived ? (
+                          <span className="status-badge status-archived">
+                            {language === 'uz' ? 'Arxivlangan' : 'В архиве'}
+                          </span>
+                        ) : (
+                          <span className="status-badge status-visible">
+                            {language === 'uz' ? 'Faol' : 'Активна'}
+                          </span>
+                        )}
+                      </td>
+                      <td>
+                        <div className="actions-cell">
+                          <button
+                            onClick={() => handleEditCategory(cat)}
+                            className="action-link edit-link"
+                          >
+                            {language === 'uz' ? 'Tahrirlash' : 'Редактировать'}
+                          </button>
+                          <button
+                            onClick={() => handleToggleCategoryArchive(cat)}
+                            className="action-link archive-link"
+                          >
+                            {cat.is_archived
+                              ? (language === 'uz' ? 'Arxivdan chiqarish' : 'Из архива')
+                              : (language === 'uz' ? 'Arxivlash' : 'В архив')}
+                          </button>
+                          <button
+                            onClick={() => handleDeleteCategory(cat)}
+                            className="action-link delete-link"
+                          >
+                            {language === 'uz' ? 'O\'chirish' : 'Удалить'}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
