@@ -696,6 +696,37 @@ export default function AdminPage() {
     }
   };
 
+  // Kategoriyani o'z darajasida bir pog'ona yuqoriga/pastga ko'chirish.
+  // Server sort_order ni qo'shni bilan almashtiradi; biz ro'yxatni
+  // qayta yuklab, yangi tartibni ko'rsatamiz. Eng chetda bo'lsa server
+  // { moved: false } qaytaradi (xato emas) — shunchaki hech nima o'zgarmaydi.
+  const handleMoveCategory = async (cat, direction) => {
+    setCrudError('');
+    setCrudSuccess('');
+    try {
+      const res = await fetch(`${backendUrl}/admin/categories/${cat.id}/move`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ direction }),
+        credentials: 'include'
+      });
+
+      if (res.status === 401 || res.status === 403) {
+        setIsAuthenticated(false);
+        return;
+      }
+
+      if (res.ok) {
+        fetchDashboardData();
+      } else {
+        const errData = await res.json();
+        setCrudError(errData.message || (language === 'uz' ? 'Tartibni o\'zgartirib bo\'lmadi.' : 'Не удалось изменить порядок.'));
+      }
+    } catch (err) {
+      setCrudError('Server connection error.');
+    }
+  };
+
   // O'chirish. Backend bog'liq mahsulot bo'lsa 409 va tushunarli xato
   // qaytaradi — o'shani bannerda ko'rsatamiz.
   const handleDeleteCategory = async (cat) => {
@@ -763,11 +794,25 @@ export default function AdminPage() {
   // yordamchi funksiya qaytargan JSX ga qo'shmaydi, natijada u yerdagi
   // `.actions-cell`, `.row-hidden`, `.cat-child-marker` kabi stillar
   // umuman qo'llanmaydi. Shu bois inline chiqaramiz.
+  // Har qatorga isFirst/isLast qo'shamiz — o'z DARAJASI ichida (asosiylar
+  // o'zaro, har otaning children'lari o'zaro). Shu bilan eng yuqoridagining
+  // ↑ va eng pastdagining ↓ tugmasi o'chiriladi.
   const orderedCategoryRows = [];
-  topLevelCategories.forEach(parent => {
-    orderedCategoryRows.push({ cat: parent, isChild: false });
-    (categoryChildrenByParent[parent.id] || []).forEach(child => {
-      orderedCategoryRows.push({ cat: child, isChild: true });
+  topLevelCategories.forEach((parent, pIdx) => {
+    orderedCategoryRows.push({
+      cat: parent,
+      isChild: false,
+      isFirst: pIdx === 0,
+      isLast: pIdx === topLevelCategories.length - 1
+    });
+    const kids = categoryChildrenByParent[parent.id] || [];
+    kids.forEach((child, cIdx) => {
+      orderedCategoryRows.push({
+        cat: child,
+        isChild: true,
+        isFirst: cIdx === 0,
+        isLast: cIdx === kids.length - 1
+      });
     });
   });
 
@@ -1477,6 +1522,7 @@ export default function AdminPage() {
                     <th>{language === 'uz' ? 'Nomi' : 'Название'}</th>
                     <th>{language === 'uz' ? 'Manzil (slug)' : 'Адрес (slug)'}</th>
                     <th>{language === 'uz' ? 'Holati' : 'Статус'}</th>
+                    <th>{language === 'uz' ? 'Tartib' : 'Порядок'}</th>
                     <th>{t('admin.actionColumn')}</th>
                   </tr>
                 </thead>
@@ -1484,7 +1530,7 @@ export default function AdminPage() {
                   {/* Ota-bola tartibidagi tekis ro'yxat (yuqorida tuzilgan).
                       Qatorlar shu yerda — return ichida — chiqadi, shunda
                       styled-jsx stillari qo'llanadi. */}
-                  {orderedCategoryRows.map(({ cat, isChild }) => (
+                  {orderedCategoryRows.map(({ cat, isChild, isFirst, isLast }) => (
                     <tr key={cat.id} className={cat.is_archived ? 'row-hidden' : ''}>
                       <td>{cat.id}</td>
                       <td className={`font-medium ${isChild ? 'cat-child-cell' : ''}`}>
@@ -1502,6 +1548,26 @@ export default function AdminPage() {
                             {language === 'uz' ? 'Faol' : 'Активна'}
                           </span>
                         )}
+                      </td>
+                      <td>
+                        <div className="order-controls">
+                          <button
+                            type="button"
+                            className="order-btn"
+                            onClick={() => handleMoveCategory(cat, 'up')}
+                            disabled={isFirst}
+                            aria-label={language === 'uz' ? 'Yuqoriga' : 'Вверх'}
+                            title={language === 'uz' ? 'Yuqoriga' : 'Вверх'}
+                          >↑</button>
+                          <button
+                            type="button"
+                            className="order-btn"
+                            onClick={() => handleMoveCategory(cat, 'down')}
+                            disabled={isLast}
+                            aria-label={language === 'uz' ? 'Pastga' : 'Вниз'}
+                            title={language === 'uz' ? 'Pastga' : 'Вниз'}
+                          >↓</button>
+                        </div>
                       </td>
                       <td>
                         <div className="actions-cell">
@@ -2104,6 +2170,38 @@ export default function AdminPage() {
           font-weight: 700;
           line-height: 1;
           vertical-align: -2px;
+        }
+
+        /* Tartib (↑/↓) tugmalari — ixcham, yonma-yon */
+        .order-controls {
+          display: inline-flex;
+          gap: 4px;
+        }
+
+        .order-btn {
+          width: 28px;
+          height: 28px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          border: 1px solid var(--border-color);
+          border-radius: 4px;
+          background-color: var(--white-surface);
+          color: var(--primary-dark);
+          font-size: 14px;
+          line-height: 1;
+          cursor: pointer;
+          transition: border-color 150ms ease, color 150ms ease;
+        }
+
+        .order-btn:hover:not(:disabled) {
+          border-color: var(--cta-orange);
+          color: var(--cta-orange);
+        }
+
+        .order-btn:disabled {
+          opacity: 0.3;
+          cursor: not-allowed;
         }
 
         /* Ota-kategoriya dropdown va tugmalar bir qatorda */
