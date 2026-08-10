@@ -2030,13 +2030,21 @@ export default function AdminPage() {
           color: var(--primary-dark);
         }
 
-        /* Arxivlangan / yashirilgan qator xira va biroz kulrang fonda */
-        .admin-table tr.row-hidden {
-          opacity: 0.6;
-          background-color: #fafafa;
+        /* Arxivlangan / yashirilgan qatorni FAOL qatorlardan bir qarashda
+           ajratish. <tr> ustidagi background/opacity brauzerlarda jadval
+           layoutida ba'zan ishlamaydi — shuning uchun signal <td>larga
+           beriladi va !important bilan mustahkamlanadi. */
+        .admin-table tr.row-hidden > td,
+        tr.row-hidden > td {
+          background-color: #f5f5f5 !important;
+          color: var(--secondary-text) !important;
+          font-style: italic;
         }
-        .admin-table tr.row-hidden > td {
-          color: var(--secondary-text);
+
+        /* Arxivlangan qatordagi slug "chip" fonini ham qatorga moslaymiz,
+           aks holda oq fonli chip xira fonda o'z-o'zidan ajralib qolardi. */
+        .admin-table tr.row-hidden .slug-code {
+          background-color: transparent !important;
         }
 
         .status-badge {
