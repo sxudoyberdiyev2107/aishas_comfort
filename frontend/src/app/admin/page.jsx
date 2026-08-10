@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useLanguage } from '../../context/LanguageContext';
 import { getImageSrc } from '../../lib/imageUrl';
 import { COLOR_PALETTE } from '../../lib/colorPalette';
+import CategoryIcon, { CATEGORY_ICON_LIST } from '../../components/CategoryIcon';
 
 export default function AdminPage() {
   const { t, language } = useLanguage();
@@ -38,7 +39,7 @@ export default function AdminPage() {
   // editingCategoryId = <id>  -> forma o'sha kategoriyani tahrirlash rejimida
   const [categories, setCategories] = useState([]);
   // parent_id: '' -> asosiy kategoriya (ota yo'q). Raqam -> tanlangan ota id
-  const [categoryForm, setCategoryForm] = useState({ name_uz: '', name_ru: '', parent_id: '' });
+  const [categoryForm, setCategoryForm] = useState({ name_uz: '', name_ru: '', parent_id: '', icon: '' });
   const [editingCategoryId, setEditingCategoryId] = useState(null);
 
   // Product Form States
@@ -604,7 +605,7 @@ export default function AdminPage() {
   // Formani "yangi qo'shish" holatiga qaytaradi
   const resetCategoryForm = () => {
     setEditingCategoryId(null);
-    setCategoryForm({ name_uz: '', name_ru: '', parent_id: '' });
+    setCategoryForm({ name_uz: '', name_ru: '', parent_id: '', icon: '' });
   };
 
   // Tahrirlash tugmasi: kategoriya ma'lumotlarini formaga yuklaydi.
@@ -616,7 +617,8 @@ export default function AdminPage() {
     setCategoryForm({
       name_uz: cat.name_uz || '',
       name_ru: cat.name_ru || '',
-      parent_id: cat.parent_id ? String(cat.parent_id) : ''
+      parent_id: cat.parent_id ? String(cat.parent_id) : '',
+      icon: cat.icon || ''
     });
   };
 
@@ -1506,6 +1508,45 @@ export default function AdminPage() {
                   )}
                 </div>
               </div>
+              {/* Ikonka tanlash — FAQAT asosiy kategoriya (ota yo'q) uchun.
+                  Pod-kategoriyada palitra o'rniga qisqa izoh chiqadi. */}
+              {categoryForm.parent_id === '' ? (
+                <div className="icon-picker">
+                  <label className="icon-picker-label">
+                    {language === 'uz' ? 'Ikonka' : 'Иконка'}
+                  </label>
+                  <div className="icon-grid">
+                    <button
+                      type="button"
+                      onClick={() => setCategoryForm(prev => ({ ...prev, icon: '' }))}
+                      className={`icon-item icon-item-none ${!categoryForm.icon ? 'picked' : ''}`}
+                      title={language === 'uz' ? 'Ikonka yo\'q' : 'Без иконки'}
+                    >
+                      <span className="icon-none-mark">✕</span>
+                      <span className="icon-label">{language === 'uz' ? 'Yo\'q' : 'Нет'}</span>
+                    </button>
+                    {CATEGORY_ICON_LIST.map(item => (
+                      <button
+                        type="button"
+                        key={item.key}
+                        onClick={() => setCategoryForm(prev => ({ ...prev, icon: item.key }))}
+                        className={`icon-item ${categoryForm.icon === item.key ? 'picked' : ''}`}
+                        title={item.label}
+                      >
+                        <CategoryIcon name={item.key} style={{ width: 32, height: 32, display: 'block' }} />
+                        <span className="icon-label">{item.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <p className="category-form-hint">
+                  {language === 'uz'
+                    ? 'Ikonka faqat asosiy kategoriyalar uchun tanlanadi.'
+                    : 'Иконка выбирается только для основных категорий.'}
+                </p>
+              )}
+
               <p className="category-form-hint">
                 {language === 'uz'
                   ? 'Sayt manzili (slug) nomdan avtomatik yasaladi.'
@@ -1535,6 +1576,11 @@ export default function AdminPage() {
                       <td>{cat.id}</td>
                       <td className={`font-medium ${isChild ? 'cat-child-cell' : ''}`}>
                         {isChild && <span className="cat-child-marker">└</span>}
+                        {cat.icon && (
+                          <span className="cat-row-icon">
+                            <CategoryIcon name={cat.icon} style={{ width: 20, height: 20, display: 'block' }} />
+                          </span>
+                        )}
                         {cat.name_uz} / {cat.name_ru}
                       </td>
                       <td><code className="slug-code">{cat.slug}</code></td>
@@ -2202,6 +2248,73 @@ export default function AdminPage() {
         .order-btn:disabled {
           opacity: 0.3;
           cursor: not-allowed;
+        }
+
+        /* ===== Ikonka tanlash palitrasi ===== */
+        .icon-picker {
+          margin-top: 16px;
+        }
+
+        .icon-picker-label {
+          display: block;
+          font-size: 13px;
+          font-weight: 500;
+          color: var(--primary-dark);
+          margin-bottom: 8px;
+        }
+
+        .icon-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+          gap: 8px;
+        }
+
+        .icon-item {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 6px;
+          padding: 10px 4px;
+          border: 1px solid var(--border-color);
+          border-radius: 6px;
+          background-color: var(--white-surface);
+          color: var(--primary-dark);
+          cursor: pointer;
+          transition: border-color 150ms ease, background-color 150ms ease;
+        }
+
+        .icon-item:hover {
+          border-color: var(--cta-orange);
+        }
+
+        .icon-item.picked {
+          border-color: var(--cta-orange);
+          background-color: rgba(255, 152, 0, 0.08);
+        }
+
+        .icon-label {
+          font-size: 10px;
+          line-height: 1.2;
+          text-align: center;
+          color: var(--secondary-text);
+        }
+
+        .icon-none-mark {
+          width: 32px;
+          height: 32px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 18px;
+          color: var(--secondary-text);
+        }
+
+        /* Ro'yxatdagi kichik ikonka (nom yonida) */
+        .cat-row-icon {
+          display: inline-flex;
+          vertical-align: middle;
+          margin-right: 8px;
+          color: inherit;
         }
 
         /* Ota-kategoriya dropdown va tugmalar bir qatorda */

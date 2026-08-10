@@ -1121,6 +1121,19 @@ function parseParentId(body) {
   return { ok: true, value: n };
 }
 
+// icon (ikonka "key"i, masalan 'sofa') ni normalize qiladi:
+// bo'sh yoki yuborilmagan -> NULL (ikonka yo'q); aks holda tozalangan
+// string (VARCHAR(50) ga sig'ishi uchun 50 belgigacha kesiladi).
+// Bazada icon har qanday kategoriyada bo'lishi mumkin — "faqat asosiy
+// kategoriyalar" cheklovi UI (admin panel) darajasida.
+function parseIcon(body) {
+  const raw = body && body.icon;
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  return trimmed.slice(0, 50);
+}
+
 // parent_id ni tekshiradi:
 //   1) ota mavjud bo'lsin
 //   2) kategoriya o'ziga o'zi ota bo'lmasin
@@ -1195,10 +1208,11 @@ router.post('/admin/categories', authMiddleware, async (req, res) => {
       [parent_id]
     );
     const nextOrder = orderResult.rows[0].next_order;
+    const icon = parseIcon(req.body);
 
     const result = await db.query(
-      'INSERT INTO categories (slug, name_uz, name_ru, parent_id, sort_order) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [slug, names.name_uz, names.name_ru, parent_id, nextOrder]
+      'INSERT INTO categories (slug, name_uz, name_ru, parent_id, sort_order, icon) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+      [slug, names.name_uz, names.name_ru, parent_id, nextOrder, icon]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -1244,9 +1258,11 @@ router.put('/admin/categories/:id', authMiddleware, async (req, res) => {
       }
     }
 
+    const icon = parseIcon(req.body);
+
     const result = await db.query(
-      'UPDATE categories SET name_uz = $1, name_ru = $2, parent_id = $3 WHERE id = $4 RETURNING *',
-      [names.name_uz, names.name_ru, parent_id, editingId]
+      'UPDATE categories SET name_uz = $1, name_ru = $2, parent_id = $3, icon = $4 WHERE id = $5 RETURNING *',
+      [names.name_uz, names.name_ru, parent_id, icon, editingId]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ message: 'Kategoriya topilmadi' });
