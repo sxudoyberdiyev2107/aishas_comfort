@@ -37,7 +37,8 @@ export default function AdminPage() {
   // editingCategoryId = null  -> forma "yangi qo'shish" rejimida
   // editingCategoryId = <id>  -> forma o'sha kategoriyani tahrirlash rejimida
   const [categories, setCategories] = useState([]);
-  const [categoryForm, setCategoryForm] = useState({ name_uz: '', name_ru: '' });
+  // parent_id: '' -> asosiy kategoriya (ota yo'q). Raqam -> tanlangan ota id
+  const [categoryForm, setCategoryForm] = useState({ name_uz: '', name_ru: '', parent_id: '' });
   const [editingCategoryId, setEditingCategoryId] = useState(null);
 
   // Product Form States
@@ -603,15 +604,20 @@ export default function AdminPage() {
   // Formani "yangi qo'shish" holatiga qaytaradi
   const resetCategoryForm = () => {
     setEditingCategoryId(null);
-    setCategoryForm({ name_uz: '', name_ru: '' });
+    setCategoryForm({ name_uz: '', name_ru: '', parent_id: '' });
   };
 
-  // Tahrirlash tugmasi: kategoriya nomlarini formaga yuklaydi
+  // Tahrirlash tugmasi: kategoriya ma'lumotlarini formaga yuklaydi.
+  // parent_id null bo'lsa "" (asosiy kategoriya), aks holda raqam-string.
   const handleEditCategory = (cat) => {
     setCrudError('');
     setCrudSuccess('');
     setEditingCategoryId(cat.id);
-    setCategoryForm({ name_uz: cat.name_uz || '', name_ru: cat.name_ru || '' });
+    setCategoryForm({
+      name_uz: cat.name_uz || '',
+      name_ru: cat.name_ru || '',
+      parent_id: cat.parent_id ? String(cat.parent_id) : ''
+    });
   };
 
   // Qo'shish (POST) yoki tahrirlash (PUT) — editingCategoryId ga qarab
@@ -729,6 +735,71 @@ export default function AdminPage() {
   // Arxivlangan mahsulot asosiy katalogda ko'rinmaydi, faqat "Arxiv"da.
   const activeProducts = products.filter(p => !p.is_archived);
   const archivedProducts = products.filter(p => p.is_archived);
+
+  // Kategoriyalar daraxti uchun yordamchi ro'yxatlar.
+  // topLevelCategories — parent_id NULL bo'lgan asosiy kategoriyalar
+  //                     (formadagi "Ota-kategoriya" dropdownida ishlatiladi).
+  // categoryChildrenByParent — key: parent id, value: shu parentning pod-lari
+  //                            (jadvalda pod-larni ota'si ostiga surib chiqarish uchun).
+  const topLevelCategories = categories.filter(c => c.parent_id === null);
+  const categoryChildrenByParent = categories.reduce((acc, c) => {
+    if (c.parent_id !== null) {
+      (acc[c.parent_id] = acc[c.parent_id] || []).push(c);
+    }
+    return acc;
+  }, {});
+  // Tahrir qilinayotgan kategoriyaning o'zi ota bo'lsa, uni endi
+  // boshqasining pod'iga qilib bo'lmaydi — dropdown o'chiriladi
+  const editingCategoryHasChildren = editingCategoryId !== null
+    && categories.some(c => c.parent_id === editingCategoryId);
+
+  // Jadvalda bir qatorni chiqaradi. isChild — pod-kategoriyami: shunga qarab
+  // qator ozroq surilib, oldida "└" belgisi chiqadi.
+  const renderCategoryRow = (cat, isChild) => (
+    <tr key={cat.id} className={cat.is_archived ? 'row-hidden' : ''}>
+      <td>{cat.id}</td>
+      <td className={`font-medium ${isChild ? 'cat-child-cell' : ''}`}>
+        {isChild && <span className="cat-child-marker">└</span>}
+        {cat.name_uz} / {cat.name_ru}
+      </td>
+      <td><code className="slug-code">{cat.slug}</code></td>
+      <td>
+        {cat.is_archived ? (
+          <span className="status-badge status-archived">
+            {language === 'uz' ? 'Arxivlangan' : 'В архиве'}
+          </span>
+        ) : (
+          <span className="status-badge status-visible">
+            {language === 'uz' ? 'Faol' : 'Активна'}
+          </span>
+        )}
+      </td>
+      <td>
+        <div className="actions-cell">
+          <button
+            onClick={() => handleEditCategory(cat)}
+            className="action-link edit-link"
+          >
+            {language === 'uz' ? 'Tahrirlash' : 'Редактировать'}
+          </button>
+          <button
+            onClick={() => handleToggleCategoryArchive(cat)}
+            className="action-link archive-link"
+          >
+            {cat.is_archived
+              ? (language === 'uz' ? 'Arxivdan chiqarish' : 'Из архива')
+              : (language === 'uz' ? 'Arxivlash' : 'В архив')}
+          </button>
+          <button
+            onClick={() => handleDeleteCategory(cat)}
+            className="action-link delete-link"
+          >
+            {language === 'uz' ? 'O\'chirish' : 'Удалить'}
+          </button>
+        </div>
+      </td>
+    </tr>
+  );
 
   if (authLoading) {
     return (
@@ -1367,6 +1438,46 @@ export default function AdminPage() {
                     placeholder={language === 'uz' ? 'Masalan: Столы' : 'Например: Столы'}
                   />
                 </div>
+              </div>
+
+              {/* Ota-kategoriya tanlash — ixtiyoriy. Faqat asosiy
+                  kategoriyalar variant sifatida chiqadi (2 darajali daraxt).
+                  Tahrir qilinayotgan kategoriyaning o'z podlari bo'lsa,
+                  dropdown o'chiriladi. */}
+              <div className="category-form-row category-parent-row">
+                <div className="form-group category-parent-group">
+                  <label htmlFor="cat-parent">
+                    {language === 'uz' ? 'Ota-kategoriya' : 'Родительская категория'}
+                  </label>
+                  <select
+                    id="cat-parent"
+                    name="parent_id"
+                    value={categoryForm.parent_id}
+                    onChange={handleCategoryFormChange}
+                    className="form-input"
+                    disabled={editingCategoryHasChildren}
+                  >
+                    <option value="">
+                      {language === 'uz'
+                        ? '— Asosiy kategoriya (ota yo\'q) —'
+                        : '— Основная категория (без родителя) —'}
+                    </option>
+                    {topLevelCategories
+                      .filter(c => c.id !== editingCategoryId && !c.is_archived)
+                      .map(c => (
+                        <option key={c.id} value={c.id}>
+                          {language === 'uz' ? c.name_uz : c.name_ru}
+                        </option>
+                      ))}
+                  </select>
+                  {editingCategoryHasChildren && (
+                    <p className="category-form-hint category-form-warn">
+                      {language === 'uz'
+                        ? 'Bu kategoriyaning pod-kategoriyalari bor — uni pod qilib bo\'lmaydi.'
+                        : 'У этой категории есть подкатегории — её нельзя сделать подкатегорией.'}
+                    </p>
+                  )}
+                </div>
                 <div className="category-form-actions">
                   <button type="submit" className="btn-primary">
                     {editingCategoryId
@@ -1400,48 +1511,18 @@ export default function AdminPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {categories.map(cat => (
-                    <tr key={cat.id} className={cat.is_archived ? 'row-hidden' : ''}>
-                      <td>{cat.id}</td>
-                      <td className="font-medium">{cat.name_uz} / {cat.name_ru}</td>
-                      <td><code className="slug-code">{cat.slug}</code></td>
-                      <td>
-                        {cat.is_archived ? (
-                          <span className="status-badge status-archived">
-                            {language === 'uz' ? 'Arxivlangan' : 'В архиве'}
-                          </span>
-                        ) : (
-                          <span className="status-badge status-visible">
-                            {language === 'uz' ? 'Faol' : 'Активна'}
-                          </span>
-                        )}
-                      </td>
-                      <td>
-                        <div className="actions-cell">
-                          <button
-                            onClick={() => handleEditCategory(cat)}
-                            className="action-link edit-link"
-                          >
-                            {language === 'uz' ? 'Tahrirlash' : 'Редактировать'}
-                          </button>
-                          <button
-                            onClick={() => handleToggleCategoryArchive(cat)}
-                            className="action-link archive-link"
-                          >
-                            {cat.is_archived
-                              ? (language === 'uz' ? 'Arxivdan chiqarish' : 'Из архива')
-                              : (language === 'uz' ? 'Arxivlash' : 'В архив')}
-                          </button>
-                          <button
-                            onClick={() => handleDeleteCategory(cat)}
-                            className="action-link delete-link"
-                          >
-                            {language === 'uz' ? 'O\'chirish' : 'Удалить'}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {/* Kategoriyalarni ota-bola tartibida ko'rsatamiz:
+                      har bir asosiy kategoriyadan keyin — uning pod-lari
+                      (surilgan holatda). Pod-larsiz kategoriya oddiy ko'rinadi. */}
+                  {topLevelCategories.map(parent => {
+                    const children = categoryChildrenByParent[parent.id] || [];
+                    return (
+                      <React.Fragment key={parent.id}>
+                        {renderCategoryRow(parent, false)}
+                        {children.map(child => renderCategoryRow(child, true))}
+                      </React.Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -1970,6 +2051,34 @@ export default function AdminPage() {
           background-color: var(--card-bg);
           padding: 2px 6px;
           border-radius: 3px;
+        }
+
+        /* Pod-kategoriya qatori: nomdan oldin "└" belgisi va biroz surilish */
+        .cat-child-cell {
+          padding-left: 32px !important;
+          color: var(--secondary-text);
+        }
+
+        .cat-child-marker {
+          display: inline-block;
+          margin-right: 8px;
+          color: var(--secondary-text);
+          font-weight: 400;
+        }
+
+        /* Ota-kategoriya dropdown va tugmalar bir qatorda */
+        .category-parent-row {
+          margin-top: 12px;
+          align-items: flex-end;
+        }
+
+        .category-parent-group {
+          flex: 1 1 260px;
+        }
+
+        .category-form-warn {
+          color: #c62828;
+          margin-top: 6px;
         }
 
         /* ===== Kategoriya qo'shish / tahrirlash formasi ===== */

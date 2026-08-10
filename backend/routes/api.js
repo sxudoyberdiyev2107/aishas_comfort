@@ -314,6 +314,31 @@ router.get('/categories', async (req, res) => {
   }
 });
 
+// GET categories tree — asosiy kategoriyalar va har birining
+// pod-kategoriyalari daraxti. Public: faqat arxivlanmaganlar.
+// Har element (asosiy va pod) parent_id maydonini saqlab qoladi.
+// Tartib id bo'yicha barqaror — admin panelda va katalogda bir xil chiqadi.
+router.get('/categories/tree', async (req, res) => {
+  try {
+    const result = await db.query(
+      'SELECT * FROM categories WHERE is_archived = FALSE ORDER BY id ASC'
+    );
+    const all = result.rows;
+
+    const tree = all
+      .filter(c => c.parent_id === null)
+      .map(parent => ({
+        ...parent,
+        children: all.filter(c => c.parent_id === parent.id)
+      }));
+
+    res.json(tree);
+  } catch (err) {
+    console.error('Kategoriya daraxtini o\'qishda xato:', err.message);
+    res.status(500).json({ message: 'Kategoriyalarni o\'qib bo\'lmadi' });
+  }
+});
+
 // ==========================================
 // 2. CHECKOUT & ORDERS ROUTE
 // ==========================================
@@ -1079,18 +1104,88 @@ function validateCategoryNames(body) {
   return { name_uz, name_ru };
 }
 
+// parent_id kelishi mumkin bo'lgan turli ko'rinishlarni (raqam, "", null,
+// undefined) DB uchun to'g'ri qiymatga aylantiradi.
+// Qaytadi: { ok: true, value: <int|null> } yoki { ok: false }
+function parseParentId(body) {
+  const raw = body && body.parent_id;
+  // Yuborilmagan yoki bo'sh → asosiy kategoriya (ota yo'q)
+  if (raw === undefined || raw === null || raw === '') {
+    return { ok: true, value: null };
+  }
+  const n = parseInt(raw, 10);
+  if (Number.isNaN(n) || n <= 0) return { ok: false };
+  return { ok: true, value: n };
+}
+
+// parent_id ni tekshiradi:
+//   1) ota mavjud bo'lsin
+//   2) kategoriya o'ziga o'zi ota bo'lmasin
+//   3) ota-kategoriyaning o'zi asosiy bo'lsin (parent_id = NULL) —
+//      shundan keyin daraxt faqat 2 darajali bo'lib qoladi.
+// editingId — PUT paytida shu kategoriyaning o'z id'si (self-check uchun);
+// POST paytida null.
+async function validateParentId(parent_id, editingId) {
+  if (parent_id === null) return { ok: true };
+
+  if (editingId !== null && parent_id === editingId) {
+    return { ok: false, message: 'Kategoriya o\'zini o\'ziga ota qila olmaydi.' };
+  }
+
+  const parentRow = await db.query(
+    'SELECT id, parent_id FROM categories WHERE id = $1',
+    [parent_id]
+  );
+  if (parentRow.rows.length === 0) {
+    return { ok: false, message: 'Tanlangan ota-kategoriya topilmadi.' };
+  }
+  if (parentRow.rows[0].parent_id !== null) {
+    return {
+      ok: false,
+      message: 'Faqat asosiy kategoriyani ota qilib tanlash mumkin (2 darajali tuzilma).'
+    };
+  }
+  return { ok: true };
+}
+
+// Kategoriyaning o'z pod-kategoriyalari bormi. PUT paytida ishlatiladi:
+// agar shu kategoriya boshqalarga ota bo'lsa, uni endi boshqasining ostiga
+// (pod qilib) biriktirib bo'lmaydi — aks holda uch darajali daraxt hosil
+// bo'lardi.
+async function categoryHasChildren(categoryId) {
+  const result = await db.query(
+    'SELECT 1 FROM categories WHERE parent_id = $1 LIMIT 1',
+    [categoryId]
+  );
+  return result.rows.length > 0;
+}
+
 // POST yangi kategoriya qo'shish
+// parent_id ixtiyoriy: yuborilmasa yoki bo'sh bo'lsa — asosiy kategoriya
+// (parent_id = NULL). Yuborilsa, tanlangan ota mavjud va o'zi asosiy
+// bo'lishi kerak (2 darajali daraxt qoidasi).
 router.post('/admin/categories', authMiddleware, async (req, res) => {
   const names = validateCategoryNames(req.body);
   if (!names) {
     return res.status(400).json({ message: 'Kategoriya nomi o\'zbekcha va ruscha to\'ldirilishi shart' });
   }
 
+  const parsed = parseParentId(req.body);
+  if (!parsed.ok) {
+    return res.status(400).json({ message: 'Ota-kategoriya identifikatori noto\'g\'ri.' });
+  }
+  const parent_id = parsed.value;
+
   try {
+    const parentCheck = await validateParentId(parent_id, null);
+    if (!parentCheck.ok) {
+      return res.status(400).json({ message: parentCheck.message });
+    }
+
     const slug = await makeUniqueCategorySlug(names.name_uz);
     const result = await db.query(
-      'INSERT INTO categories (slug, name_uz, name_ru) VALUES ($1, $2, $3) RETURNING *',
-      [slug, names.name_uz, names.name_ru]
+      'INSERT INTO categories (slug, name_uz, name_ru, parent_id) VALUES ($1, $2, $3, $4) RETURNING *',
+      [slug, names.name_uz, names.name_ru, parent_id]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -1099,18 +1194,46 @@ router.post('/admin/categories', authMiddleware, async (req, res) => {
   }
 });
 
-// PUT kategoriya nomini tahrirlash (slug o'zgarmaydi)
+// PUT kategoriya nomini va parent_id sini tahrirlash (slug o'zgarmaydi).
+// Ikki qo'shimcha himoya:
+//   1) self-check: o'ziga o'zi ota bo'lolmaydi (validateParentId ichida)
+//   2) ota bo'lgan kategoriyani boshqasining ostiga qo'yib bo'lmaydi
+//      (aks holda 3-daraja hosil bo'lardi).
 router.put('/admin/categories/:id', authMiddleware, async (req, res) => {
   const { id } = req.params;
+  const editingId = parseInt(id, 10);
+
   const names = validateCategoryNames(req.body);
   if (!names) {
     return res.status(400).json({ message: 'Kategoriya nomi o\'zbekcha va ruscha to\'ldirilishi shart' });
   }
 
+  const parsed = parseParentId(req.body);
+  if (!parsed.ok) {
+    return res.status(400).json({ message: 'Ota-kategoriya identifikatori noto\'g\'ri.' });
+  }
+  const parent_id = parsed.value;
+
   try {
+    const parentCheck = await validateParentId(parent_id, editingId);
+    if (!parentCheck.ok) {
+      return res.status(400).json({ message: parentCheck.message });
+    }
+
+    // Agar shu kategoriyaning o'zi ota bo'lsa (children'i bor bo'lsa),
+    // uni boshqasining pod'i qilib bo'lmaydi
+    if (parent_id !== null) {
+      const hasKids = await categoryHasChildren(editingId);
+      if (hasKids) {
+        return res.status(400).json({
+          message: 'Bu kategoriyaning pod-kategoriyalari bor — uni pod qilib bo\'lmaydi.'
+        });
+      }
+    }
+
     const result = await db.query(
-      'UPDATE categories SET name_uz = $1, name_ru = $2 WHERE id = $3 RETURNING *',
-      [names.name_uz, names.name_ru, id]
+      'UPDATE categories SET name_uz = $1, name_ru = $2, parent_id = $3 WHERE id = $4 RETURNING *',
+      [names.name_uz, names.name_ru, parent_id, editingId]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ message: 'Kategoriya topilmadi' });
