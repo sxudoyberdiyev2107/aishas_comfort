@@ -289,9 +289,19 @@ router.get('/products/:id', async (req, res) => {
 });
 
 // GET categories
+// Saytga faqat arxivlanmagan kategoriyalar chiqadi. Admin esa
+// hammasini ko'radi (arxivlanganlarni ham — ularni panelda
+// boshqarishi kerak). Xuddi mahsulotlardagi kabi: admin cookie'si
+// bo'lsa isAdminRequest(req) true qaytaradi.
 router.get('/categories', async (req, res) => {
+  const isAdmin = isAdminRequest(req);
+
   try {
-    const result = await db.query('SELECT * FROM categories ORDER BY id ASC');
+    const sql = isAdmin
+      ? 'SELECT * FROM categories ORDER BY id ASC'
+      : 'SELECT * FROM categories WHERE is_archived = FALSE ORDER BY id ASC';
+
+    const result = await db.query(sql);
     res.json(result.rows);
   } catch (err) {
     console.warn('Database error, falling back to mock categories:', err.message);
@@ -1012,6 +1022,157 @@ router.delete('/colors/images/:imageId', authMiddleware, async (req, res) => {
   } catch (err) {
     console.error('Rang rasmini o\'chirishda xato:', err.message);
     res.status(500).json({ message: 'Rasmni o\'chirib bo\'lmadi' });
+  }
+});
+
+// ==========================================
+// 6. KATEGORIYALAR (admin uchun)
+// ==========================================
+//
+// Bu bo'limda zaxira (mock) mantiq yo'q: baza ishlamasa ochiq xato
+// qaytadi, aks holda admin "saqlandi" deb o'ylab qolardi.
+//
+// Eslatma: kategoriyalar bazada category_id orqali mahsulotlarga
+// bog'langan. Slug bir marta yasaladi va TAHRIRLASHDA O'ZGARMAYDI —
+// shunda saytdagi /kategoriya/<slug> havolalari barqaror qoladi.
+
+// Kategoriya nomidan sayt manzili uchun slug yasaydi.
+//   "Bolalar o'yingohlari" -> "bolalar-o-yingohlari"
+// Faqat name_uz (lotin) dan yasaladi: name_ru kirill bo'lsa slug
+// buzuq chiqardi. Lotin harf/raqamdan boshqa hamma narsa (bo'sh joy,
+// apostrof, tinish belgilari) "-" ga aylanadi.
+function slugifyCategoryName(name) {
+  return String(name || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')  // lotin harf/raqamdan boshqasi -> "-"
+    .replace(/^-+|-+$/g, '');      // boshi va oxiridagi "-" larni olib tashlash
+}
+
+// Takrorlanmaydigan slug qaytaradi: "stol" band bo'lsa "stol-2",
+// u ham band bo'lsa "stol-3" ... Shunday qilib ikki kategoriya
+// hech qachon bitta URL ga tushmaydi.
+// Nom lotin harf bermasa (masalan faqat kirill yozilgan bo'lsa)
+// "kategoriya" so'zidan boshlaymiz, aks holda slug bo'sh chiqib
+// UNIQUE cheklovini buzardi.
+async function makeUniqueCategorySlug(name) {
+  const base = slugifyCategoryName(name) || 'kategoriya';
+
+  let candidate = base;
+  let counter = 2;
+  // Kategoriyalar kam, shuning uchun ketma-ket tekshirish yetarli
+  while (true) {
+    const existing = await db.query('SELECT 1 FROM categories WHERE slug = $1', [candidate]);
+    if (existing.rows.length === 0) {
+      return candidate;
+    }
+    candidate = `${base}-${counter}`;
+    counter++;
+  }
+}
+
+// Ikkala tildagi nom to'ldirilganini tekshiradi. To'g'ri bo'lsa
+// tozalangan (trim qilingan) nomlarni, aks holda null qaytaradi.
+function validateCategoryNames(body) {
+  const name_uz = typeof body.name_uz === 'string' ? body.name_uz.trim() : '';
+  const name_ru = typeof body.name_ru === 'string' ? body.name_ru.trim() : '';
+  if (!name_uz || !name_ru) return null;
+  return { name_uz, name_ru };
+}
+
+// POST yangi kategoriya qo'shish
+router.post('/admin/categories', authMiddleware, async (req, res) => {
+  const names = validateCategoryNames(req.body);
+  if (!names) {
+    return res.status(400).json({ message: 'Kategoriya nomi o\'zbekcha va ruscha to\'ldirilishi shart' });
+  }
+
+  try {
+    const slug = await makeUniqueCategorySlug(names.name_uz);
+    const result = await db.query(
+      'INSERT INTO categories (slug, name_uz, name_ru) VALUES ($1, $2, $3) RETURNING *',
+      [slug, names.name_uz, names.name_ru]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('Kategoriya qo\'shishda xato:', err.message);
+    res.status(500).json({ message: 'Kategoriyani saqlab bo\'lmadi' });
+  }
+});
+
+// PUT kategoriya nomini tahrirlash (slug o'zgarmaydi)
+router.put('/admin/categories/:id', authMiddleware, async (req, res) => {
+  const { id } = req.params;
+  const names = validateCategoryNames(req.body);
+  if (!names) {
+    return res.status(400).json({ message: 'Kategoriya nomi o\'zbekcha va ruscha to\'ldirilishi shart' });
+  }
+
+  try {
+    const result = await db.query(
+      'UPDATE categories SET name_uz = $1, name_ru = $2 WHERE id = $3 RETURNING *',
+      [names.name_uz, names.name_ru, id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Kategoriya topilmadi' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Kategoriyani tahrirlashda xato:', err.message);
+    res.status(500).json({ message: 'Kategoriyani yangilab bo\'lmadi' });
+  }
+});
+
+// PATCH arxivlash / arxivdan chiqarish (toggle)
+// Hozirgi holatni teskarisiga o'zgartiradi: arxivlangan bo'lsa
+// chiqaradi, chiqarilgan bo'lsa arxivlaydi.
+router.patch('/admin/categories/:id/archive', authMiddleware, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const result = await db.query(
+      'UPDATE categories SET is_archived = NOT is_archived WHERE id = $1 RETURNING *',
+      [id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Kategoriya topilmadi' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Kategoriya arxiv holatini o\'zgartirishda xato:', err.message);
+    res.status(500).json({ message: 'Kategoriya holatini o\'zgartirib bo\'lmadi' });
+  }
+});
+
+// DELETE kategoriyani o'chirish — FAQAT unga bog'liq mahsulot bo'lmasa.
+// Mahsulot bo'lsa o'chirmaymiz: aks holda mahsulotlar kategoriyasiz
+// qolib, saytda topilmay qolardi. Bunday holatda tushunarli xato
+// qaytaramiz (admin avval mahsulotlarni ko'chirishi yoki arxivlashi kerak).
+router.delete('/admin/categories/:id', authMiddleware, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    // Bog'liq mahsulotlar soni. Arxivlangan mahsulotlar ham hisobga
+    // olinadi — ular ham bazada shu kategoriyaga bog'langan.
+    const productCheck = await db.query(
+      'SELECT COUNT(*) AS count FROM products WHERE category_id = $1',
+      [id]
+    );
+    const productCount = parseInt(productCheck.rows[0].count, 10);
+
+    if (productCount > 0) {
+      return res.status(409).json({
+        message: `Bu kategoriyada mahsulotlar bor (${productCount} ta). Avval ularni boshqa kategoriyaga ko'chiring yoki arxivlang.`
+      });
+    }
+
+    const result = await db.query('DELETE FROM categories WHERE id = $1 RETURNING id', [id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Kategoriya topilmadi' });
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Kategoriyani o\'chirishda xato:', err.message);
+    res.status(500).json({ message: 'Kategoriyani o\'chirib bo\'lmadi' });
   }
 });
 

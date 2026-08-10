@@ -9,7 +9,7 @@ export default function AdminPage() {
   const { t, language } = useLanguage();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('products'); // products, orders
+  const [activeTab, setActiveTab] = useState('products'); // products, categories, orders, archive
 
   // Login Form States
   const [loginData, setLoginData] = useState({ username: '', password: '' });
@@ -32,6 +32,13 @@ export default function AdminPage() {
   const [colorForm, setColorForm] = useState({ name_uz: '', name_ru: '', hex_code: '#1E5AA8' });
   const [colorError, setColorError] = useState('');
   const [colorImageUploadingId, setColorImageUploadingId] = useState(null);
+
+  // Kategoriyalar boshqaruvi
+  // editingCategoryId = null  -> forma "yangi qo'shish" rejimida
+  // editingCategoryId = <id>  -> forma o'sha kategoriyani tahrirlash rejimida
+  const [categories, setCategories] = useState([]);
+  const [categoryForm, setCategoryForm] = useState({ name_uz: '', name_ru: '' });
+  const [editingCategoryId, setEditingCategoryId] = useState(null);
 
   // Product Form States
   const [productForm, setProductForm] = useState({
@@ -88,6 +95,15 @@ export default function AdminPage() {
       if (orderRes.ok) {
         const orderData = await orderRes.json();
         setOrders(orderData);
+      }
+
+      // Fetch Categories
+      // credentials: 'include' bilan server bizni admin deb taniydi va
+      // arxivlangan kategoriyalarni ham qaytaradi (ularni ham boshqaramiz)
+      const catRes = await fetch(`${backendUrl}/categories`, { credentials: 'include' });
+      if (catRes.ok) {
+        const catData = await catRes.json();
+        setCategories(catData);
       }
     } catch (err) {
       console.error('Error fetching dashboard data:', err);
@@ -577,6 +593,138 @@ export default function AdminPage() {
     });
   };
 
+  // ===== KATEGORIYALAR =====
+
+  const handleCategoryFormChange = (e) => {
+    const { name, value } = e.target;
+    setCategoryForm(prev => ({ ...prev, [name]: value }));
+  };
+
+  // Formani "yangi qo'shish" holatiga qaytaradi
+  const resetCategoryForm = () => {
+    setEditingCategoryId(null);
+    setCategoryForm({ name_uz: '', name_ru: '' });
+  };
+
+  // Tahrirlash tugmasi: kategoriya nomlarini formaga yuklaydi
+  const handleEditCategory = (cat) => {
+    setCrudError('');
+    setCrudSuccess('');
+    setEditingCategoryId(cat.id);
+    setCategoryForm({ name_uz: cat.name_uz || '', name_ru: cat.name_ru || '' });
+  };
+
+  // Qo'shish (POST) yoki tahrirlash (PUT) — editingCategoryId ga qarab
+  const handleCategorySubmit = async (e) => {
+    e.preventDefault();
+    setCrudError('');
+    setCrudSuccess('');
+
+    if (!categoryForm.name_uz.trim() || !categoryForm.name_ru.trim()) {
+      setCrudError(language === 'uz'
+        ? 'Kategoriya nomini o\'zbekcha va ruscha yozing.'
+        : 'Введите название категории на узбекском и русском.');
+      return;
+    }
+
+    const url = editingCategoryId
+      ? `${backendUrl}/admin/categories/${editingCategoryId}`
+      : `${backendUrl}/admin/categories`;
+    const method = editingCategoryId ? 'PUT' : 'POST';
+
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(categoryForm),
+        credentials: 'include'
+      });
+
+      if (res.status === 401 || res.status === 403) {
+        setIsAuthenticated(false);
+        return;
+      }
+
+      if (res.ok) {
+        setCrudSuccess(editingCategoryId
+          ? (language === 'uz' ? 'Kategoriya tahrirlandi.' : 'Категория изменена.')
+          : (language === 'uz' ? 'Kategoriya qo\'shildi.' : 'Категория добавлена.'));
+        resetCategoryForm();
+        fetchDashboardData();
+      } else {
+        const errData = await res.json();
+        setCrudError(errData.message || (language === 'uz' ? 'Kategoriyani saqlab bo\'lmadi.' : 'Не удалось сохранить категорию.'));
+      }
+    } catch (err) {
+      setCrudError('Server connection error.');
+    }
+  };
+
+  // Arxivlash / arxivdan chiqarish (toggle). Server hozirgi holatni
+  // teskarisiga o'zgartiradi, biz shunchaki chaqiramiz.
+  const handleToggleCategoryArchive = async (cat) => {
+    setCrudError('');
+    setCrudSuccess('');
+    try {
+      const res = await fetch(`${backendUrl}/admin/categories/${cat.id}/archive`, {
+        method: 'PATCH',
+        credentials: 'include'
+      });
+
+      if (res.status === 401 || res.status === 403) {
+        setIsAuthenticated(false);
+        return;
+      }
+
+      if (res.ok) {
+        setCrudSuccess(cat.is_archived
+          ? (language === 'uz' ? 'Kategoriya arxivdan chiqarildi.' : 'Категория возвращена из архива.')
+          : (language === 'uz' ? 'Kategoriya arxivlandi.' : 'Категория архивирована.'));
+        fetchDashboardData();
+      } else {
+        const errData = await res.json();
+        setCrudError(errData.message || (language === 'uz' ? 'Holatni o\'zgartirib bo\'lmadi.' : 'Не удалось изменить статус.'));
+      }
+    } catch (err) {
+      setCrudError('Server connection error.');
+    }
+  };
+
+  // O'chirish. Backend bog'liq mahsulot bo'lsa 409 va tushunarli xato
+  // qaytaradi — o'shani bannerda ko'rsatamiz.
+  const handleDeleteCategory = async (cat) => {
+    const confirmText = language === 'uz'
+      ? `"${cat.name_uz}" kategoriyasini o'chirasizmi?`
+      : `Удалить категорию «${cat.name_ru}»?`;
+    if (!window.confirm(confirmText)) return;
+
+    setCrudError('');
+    setCrudSuccess('');
+    try {
+      const res = await fetch(`${backendUrl}/admin/categories/${cat.id}`, {
+        method: 'DELETE',
+        credentials: 'include'
+      });
+
+      if (res.status === 401 || res.status === 403) {
+        setIsAuthenticated(false);
+        return;
+      }
+
+      if (res.ok) {
+        setCrudSuccess(language === 'uz' ? 'Kategoriya o\'chirildi.' : 'Категория удалена.');
+        // O'chirilgan kategoriya formada ochiq bo'lsa, formani tozalaymiz
+        if (editingCategoryId === cat.id) resetCategoryForm();
+        fetchDashboardData();
+      } else {
+        const errData = await res.json();
+        setCrudError(errData.message || (language === 'uz' ? 'Kategoriyani o\'chirib bo\'lmadi.' : 'Не удалось удалить категорию.'));
+      }
+    } catch (err) {
+      setCrudError('Server connection error.');
+    }
+  };
+
   // Katalog va Arxiv ro'yxatlari.
   // Arxivlangan mahsulot asosiy katalogda ko'rinmaydi, faqat "Arxiv"da.
   const activeProducts = products.filter(p => !p.is_archived);
@@ -716,6 +864,12 @@ export default function AdminPage() {
             onClick={() => setActiveTab('products')}
           >
             {language === 'uz' ? 'Mahsulotlar Katalogi' : 'Каталог товаров'}
+          </button>
+          <button
+            className={`tab-btn ${activeTab === 'categories' ? 'active' : ''}`}
+            onClick={() => setActiveTab('categories')}
+          >
+            {language === 'uz' ? 'Kategoriyalar' : 'Категории'} ({categories.length})
           </button>
           <button
             className={`tab-btn ${activeTab === 'orders' ? 'active' : ''}`}
@@ -1173,6 +1327,130 @@ export default function AdminPage() {
                   </tbody>
                 </table>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB: KATEGORIYALAR */}
+        {activeTab === 'categories' && (
+          <div className="orders-panel">
+            <h2 className="panel-title">
+              {language === 'uz' ? 'Kategoriyalar' : 'Категории'}
+            </h2>
+
+            {/* Yangi qo'shish / tahrirlash formasi */}
+            <form onSubmit={handleCategorySubmit} className="category-form">
+              <h3 className="category-form-title">
+                {editingCategoryId
+                  ? (language === 'uz' ? 'Kategoriyani tahrirlash' : 'Редактировать категорию')
+                  : (language === 'uz' ? 'Yangi kategoriya' : 'Новая категория')}
+              </h3>
+              <div className="category-form-row">
+                <div className="form-group">
+                  <label htmlFor="cat-name-uz">
+                    {language === 'uz' ? 'Nomi (o\'zbekcha)' : 'Название (узб.)'} *
+                  </label>
+                  <input
+                    type="text"
+                    id="cat-name-uz"
+                    name="name_uz"
+                    value={categoryForm.name_uz}
+                    onChange={handleCategoryFormChange}
+                    className="form-input"
+                    placeholder={language === 'uz' ? 'Masalan: Stollar' : 'Например: Столы'}
+                  />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="cat-name-ru">
+                    {language === 'uz' ? 'Nomi (ruscha)' : 'Название (рус.)'} *
+                  </label>
+                  <input
+                    type="text"
+                    id="cat-name-ru"
+                    name="name_ru"
+                    value={categoryForm.name_ru}
+                    onChange={handleCategoryFormChange}
+                    className="form-input"
+                    placeholder={language === 'uz' ? 'Masalan: Столы' : 'Например: Столы'}
+                  />
+                </div>
+                <div className="category-form-actions">
+                  <button type="submit" className="btn-primary">
+                    {editingCategoryId
+                      ? (language === 'uz' ? 'Saqlash' : 'Сохранить')
+                      : (language === 'uz' ? 'Qo\'shish' : 'Добавить')}
+                  </button>
+                  {editingCategoryId && (
+                    <button type="button" onClick={resetCategoryForm} className="btn-secondary">
+                      {language === 'uz' ? 'Bekor qilish' : 'Отмена'}
+                    </button>
+                  )}
+                </div>
+              </div>
+              <p className="category-form-hint">
+                {language === 'uz'
+                  ? 'Sayt manzili (slug) nomdan avtomatik yasaladi.'
+                  : 'Адрес на сайте (slug) создаётся из названия автоматически.'}
+              </p>
+            </form>
+
+            {/* Kategoriyalar ro'yxati */}
+            <div className="table-responsive">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>{language === 'uz' ? 'Nomi' : 'Название'}</th>
+                    <th>{language === 'uz' ? 'Manzil (slug)' : 'Адрес (slug)'}</th>
+                    <th>{language === 'uz' ? 'Holati' : 'Статус'}</th>
+                    <th>{t('admin.actionColumn')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {categories.map(cat => (
+                    <tr key={cat.id} className={cat.is_archived ? 'row-hidden' : ''}>
+                      <td>{cat.id}</td>
+                      <td className="font-medium">{cat.name_uz} / {cat.name_ru}</td>
+                      <td><code className="slug-code">{cat.slug}</code></td>
+                      <td>
+                        {cat.is_archived ? (
+                          <span className="status-badge status-archived">
+                            {language === 'uz' ? 'Arxivlangan' : 'В архиве'}
+                          </span>
+                        ) : (
+                          <span className="status-badge status-visible">
+                            {language === 'uz' ? 'Faol' : 'Активна'}
+                          </span>
+                        )}
+                      </td>
+                      <td>
+                        <div className="actions-cell">
+                          <button
+                            onClick={() => handleEditCategory(cat)}
+                            className="action-link edit-link"
+                          >
+                            {language === 'uz' ? 'Tahrirlash' : 'Редактировать'}
+                          </button>
+                          <button
+                            onClick={() => handleToggleCategoryArchive(cat)}
+                            className="action-link archive-link"
+                          >
+                            {cat.is_archived
+                              ? (language === 'uz' ? 'Arxivdan chiqarish' : 'Из архива')
+                              : (language === 'uz' ? 'Arxivlash' : 'В архив')}
+                          </button>
+                          <button
+                            onClick={() => handleDeleteCategory(cat)}
+                            className="action-link delete-link"
+                          >
+                            {language === 'uz' ? 'O\'chirish' : 'Удалить'}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         )}
@@ -1684,6 +1962,59 @@ export default function AdminPage() {
         .status-hidden {
           background-color: #fff3e0;
           color: #ef6c00;
+        }
+
+        /* Arxivlangan kategoriya belgisi (kulrang) */
+        .status-archived {
+          background-color: #eceff1;
+          color: #546e7a;
+        }
+
+        /* Slug matni — kichik va kulrang, URL ekanini bildiradi */
+        .slug-code {
+          font-size: 12px;
+          color: var(--secondary-text);
+          background-color: var(--card-bg);
+          padding: 2px 6px;
+          border-radius: 3px;
+        }
+
+        /* ===== Kategoriya qo'shish / tahrirlash formasi ===== */
+        .category-form {
+          background-color: var(--white-surface);
+          border: 1px solid var(--border-color);
+          border-radius: 4px;
+          padding: 20px 24px;
+          margin-bottom: 24px;
+        }
+
+        .category-form-title {
+          font-size: 15px;
+          font-weight: 700;
+          margin: 0 0 16px;
+        }
+
+        .category-form-row {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 12px;
+          align-items: flex-end;
+        }
+
+        .category-form-row .form-group {
+          flex: 1 1 200px;
+        }
+
+        .category-form-actions {
+          display: flex;
+          gap: 8px;
+          flex-shrink: 0;
+        }
+
+        .category-form-hint {
+          font-size: 12px;
+          color: var(--secondary-text);
+          margin: 12px 0 0;
         }
 
         .archive-hint {
