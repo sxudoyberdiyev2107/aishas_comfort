@@ -298,8 +298,8 @@ router.get('/categories', async (req, res) => {
 
   try {
     const sql = isAdmin
-      ? 'SELECT * FROM categories ORDER BY id ASC'
-      : 'SELECT * FROM categories WHERE is_archived = FALSE ORDER BY id ASC';
+      ? 'SELECT * FROM categories ORDER BY sort_order ASC NULLS LAST, id ASC'
+      : 'SELECT * FROM categories WHERE is_archived = FALSE ORDER BY sort_order ASC NULLS LAST, id ASC';
 
     const result = await db.query(sql);
     res.json(result.rows);
@@ -320,8 +320,11 @@ router.get('/categories', async (req, res) => {
 // Tartib id bo'yicha barqaror — admin panelda va katalogda bir xil chiqadi.
 router.get('/categories/tree', async (req, res) => {
   try {
+    // sort_order bo'yicha saralab olamiz — shu tufayli quyidagi filter'lar
+    // ham (asosiylar ham, har otaning children'lari ham) o'z ichida
+    // sort_order tartibida chiqadi.
     const result = await db.query(
-      'SELECT * FROM categories WHERE is_archived = FALSE ORDER BY id ASC'
+      'SELECT * FROM categories WHERE is_archived = FALSE ORDER BY sort_order ASC NULLS LAST, id ASC'
     );
     const all = result.rows;
 
@@ -1183,9 +1186,19 @@ router.post('/admin/categories', authMiddleware, async (req, res) => {
     }
 
     const slug = await makeUniqueCategorySlug(names.name_uz);
+
+    // Yangi kategoriya o'z darajasining OXIRIGA tushadi: shu daraja
+    // (bir xil parent_id) ichidagi eng katta sort_order + 1.
+    // parent_id NULL bo'lishi mumkin — IS NOT DISTINCT FROM NULL-xavfsiz.
+    const orderResult = await db.query(
+      'SELECT COALESCE(MAX(sort_order), 0) + 1 AS next_order FROM categories WHERE parent_id IS NOT DISTINCT FROM $1',
+      [parent_id]
+    );
+    const nextOrder = orderResult.rows[0].next_order;
+
     const result = await db.query(
-      'INSERT INTO categories (slug, name_uz, name_ru, parent_id) VALUES ($1, $2, $3, $4) RETURNING *',
-      [slug, names.name_uz, names.name_ru, parent_id]
+      'INSERT INTO categories (slug, name_uz, name_ru, parent_id, sort_order) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      [slug, names.name_uz, names.name_ru, parent_id, nextOrder]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -1263,6 +1276,68 @@ router.patch('/admin/categories/:id/archive', authMiddleware, async (req, res) =
   } catch (err) {
     console.error('Kategoriya arxiv holatini o\'zgartirishda xato:', err.message);
     res.status(500).json({ message: 'Kategoriya holatini o\'zgartirib bo\'lmadi' });
+  }
+});
+
+// PATCH kategoriya tartibini o'zgartirish (bir pog'ona yuqori/past).
+// Body: { direction: "up" | "down" }.
+// Faqat O'Z DARAJASI ichida (bir xil parent_id) ishlaydi: qo'shni
+// kategoriya bilan sort_order almashtiriladi. Pod boshqa otaga o'tmaydi.
+// Eng chetda bo'lsa hech narsa qilinmaydi (moved: false) — bu xato emas.
+router.patch('/admin/categories/:id/move', authMiddleware, async (req, res) => {
+  const { id } = req.params;
+  const direction = req.body && req.body.direction;
+
+  if (direction !== 'up' && direction !== 'down') {
+    return res.status(400).json({ message: 'direction "up" yoki "down" bo\'lishi kerak.' });
+  }
+
+  try {
+    const currentResult = await db.query(
+      'SELECT id, parent_id, sort_order FROM categories WHERE id = $1',
+      [id]
+    );
+    if (currentResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Kategoriya topilmadi' });
+    }
+    const current = currentResult.rows[0];
+
+    // O'z darajasidagi (bir xil parent_id) qo'shnini topamiz.
+    //   up   -> shu elementdan yuqoridagi eng yaqin (kattaroq sort_order emas)
+    //   down -> shu elementdan pastdagi eng yaqin
+    // parent_id NULL bo'lishi mumkin -> IS NOT DISTINCT FROM NULL-xavfsiz.
+    // (sort_order, id) juftligi bilan solishtirish tenglik holatini ham
+    // aniq (barqaror) hal qiladi.
+    const neighborSql = direction === 'up'
+      ? `SELECT id, sort_order FROM categories
+           WHERE parent_id IS NOT DISTINCT FROM $1
+             AND (sort_order, id) < ($2, $3)
+           ORDER BY sort_order DESC, id DESC
+           LIMIT 1`
+      : `SELECT id, sort_order FROM categories
+           WHERE parent_id IS NOT DISTINCT FROM $1
+             AND (sort_order, id) > ($2, $3)
+           ORDER BY sort_order ASC, id ASC
+           LIMIT 1`;
+
+    const neighborResult = await db.query(neighborSql, [
+      current.parent_id, current.sort_order, current.id
+    ]);
+
+    // Eng yuqorida/pastda — ko'chiradigan qo'shni yo'q
+    if (neighborResult.rows.length === 0) {
+      return res.json({ moved: false });
+    }
+    const neighbor = neighborResult.rows[0];
+
+    // Ikkovining sort_order qiymatini almashtiramiz
+    await db.query('UPDATE categories SET sort_order = $1 WHERE id = $2', [neighbor.sort_order, current.id]);
+    await db.query('UPDATE categories SET sort_order = $1 WHERE id = $2', [current.sort_order, neighbor.id]);
+
+    res.json({ moved: true });
+  } catch (err) {
+    console.error('Kategoriya tartibini o\'zgartirishda xato:', err.message);
+    res.status(500).json({ message: 'Tartibni o\'zgartirib bo\'lmadi' });
   }
 });
 
