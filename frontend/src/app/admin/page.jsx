@@ -982,19 +982,12 @@ export default function AdminPage() {
                       onChange={handleFormChange}
                       className="form-input"
                     >
-                      <option value="parta-stullar">{t('categories.parta-stullar')}</option>
-                      <option value="bolalar-o-yingohlari">{t('categories.bolalar-o-yingohlari')}</option>
-                      <option value="kompyuter-ish-stollari">{t('categories.kompyuter-ish-stollari')}</option>
-                      <option value="ofis-kreslolari">{t('categories.ofis-kreslolari')}</option>
-                      <option value="game-kreslolari">{t('categories.game-kreslolari')}</option>
-                      <option value="bar-stullari">{t('categories.bar-stullari')}</option>
-                      <option value="boshqa-stul-kreslolar">{t('categories.boshqa-stul-kreslolar')}</option>
-                      <option value="yugurish-yo-laklari">{t('categories.yugurish-yo-laklari')}</option>
-                      <option value="velo-trenajyorlar">{t('categories.velo-trenajyorlar')}</option>
-                      <option value="tebratma-kursilar">{t('categories.tebratma-kursilar')}</option>
-                      <option value="kitob-javonlari">{t('categories.kitob-javonlari')}</option>
-                      <option value="kemping-uchun">{t('categories.kemping-uchun')}</option>
-                      <option value="stollar">{t('categories.stollar')}</option>
+                      {/* Faqat FAOL (arxivlanmagan) kategoriyalar tanlash uchun */}
+                      {categories.filter(c => !c.is_archived).map(cat => (
+                        <option key={cat.id} value={cat.slug}>
+                          {language === 'uz' ? cat.name_uz : cat.name_ru}
+                        </option>
+                      ))}
                     </select>
                   </div>
                 </div>

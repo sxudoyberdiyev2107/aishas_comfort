@@ -4,6 +4,8 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useLanguage } from '../context/LanguageContext';
 
+const backendUrl = 'https://aishascomfort-production.up.railway.app/api';
+
 export default function Header() {
   const { language, changeLanguage, t } = useLanguage();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -11,6 +13,10 @@ export default function Header() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSticky, setIsSticky] = useState(false);
   const [cartCount, setCartCount] = useState(0);
+  // Mobil menyudagi kategoriyalar bazadan yuklanadi. Arxivlangan
+  // kategoriyalar server tomonidan (public GET /categories) yashirilgan
+  // holda qaytadi.
+  const [categoriesList, setCategoriesList] = useState([]);
 
   // Cart item counter listener
   useEffect(() => {
@@ -33,6 +39,16 @@ export default function Header() {
       window.removeEventListener('cartUpdated', updateCartCount);
       window.removeEventListener('storage', updateCartCount);
     };
+  }, []);
+
+  // Kategoriyalarni bazadan olish (public — arxivlanganlar chiqmaydi)
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${backendUrl}/categories`)
+      .then(res => res.ok ? res.json() : [])
+      .then(data => { if (!cancelled) setCategoriesList(data); })
+      .catch(() => { if (!cancelled) setCategoriesList([]); });
+    return () => { cancelled = true; };
   }, []);
 
   // Scroll listener for sticky styles
@@ -64,22 +80,6 @@ export default function Header() {
     { name: t('navigation.promos'), path: '/kategoriya/aksiya' },
     { name: t('navigation.about'), path: '/biz-haqimizda' },
     { name: t('navigation.contact'), path: '/aloqa' }
-  ];
-
-  const categoriesList = [
-    { nameKey: 'parta-stullar', slug: 'parta-stullar' },
-    { nameKey: 'bolalar-o-yingohlari', slug: 'bolalar-o-yingohlari' },
-    { nameKey: 'kompyuter-ish-stollari', slug: 'kompyuter-ish-stollari' },
-    { nameKey: 'ofis-kreslolari', slug: 'ofis-kreslolari' },
-    { nameKey: 'game-kreslolari', slug: 'game-kreslolari' },
-    { nameKey: 'bar-stullari', slug: 'bar-stullari' },
-    { nameKey: 'boshqa-stul-kreslolar', slug: 'boshqa-stul-kreslolar' },
-    { nameKey: 'yugurish-yo-laklari', slug: 'yugurish-yo-laklari' },
-    { nameKey: 'velo-trenajyorlar', slug: 'velo-trenajyorlar' },
-    { nameKey: 'tebratma-kursilar', slug: 'tebratma-kursilar' },
-    { nameKey: 'kitob-javonlari', slug: 'kitob-javonlari' },
-    { nameKey: 'kemping-uchun', slug: 'kemping-uchun' },
-    { nameKey: 'stollar', slug: 'stollar' }
   ];
 
   return (
@@ -213,14 +213,14 @@ export default function Header() {
           </div>
           
           <ul className="mobile-categories-list">
-            {categoriesList.map((cat, idx) => (
-              <li key={idx}>
-                <Link 
-                  href={`/kategoriya/${cat.slug}`} 
+            {categoriesList.map(cat => (
+              <li key={cat.id}>
+                <Link
+                  href={`/kategoriya/${cat.slug}`}
                   className="mobile-cat-link"
                   onClick={() => setIsMobileMenuOpen(false)}
                 >
-                  {t('categories.' + cat.nameKey)}
+                  {(language === 'uz' ? cat.name_uz : cat.name_ru) || cat.slug}
                 </Link>
               </li>
             ))}
