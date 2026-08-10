@@ -1979,17 +1979,23 @@ export default function AdminPage() {
         .actions-cell {
           display: flex;
           flex-wrap: wrap;
-          gap: 12px 16px;
           align-items: center;
         }
 
-        /* Gap fallback — kadrlab: agar biror sabab bilan gap qo'llanilmasa
-           tugmalar orasida bo'shliq bo'lishi uchun */
-        .actions-cell > .action-link + .action-link {
-          margin-left: 0;
-        }
+        /* Tugmalarning o'zi "chip"-simon: padding + inline-flex.
+           Bo'shliq gap'ga tayanмайdi — har bir keyingi tugmaga majburiy
+           margin qo'yiladi (adjacent-sibling selektor). Shu bilan tugmalar
+           istalgan brauzer va layoutда bir-biridan aniq ajralib turadi. */
         .actions-cell > .action-link {
+          display: inline-flex;
+          align-items: center;
+          padding: 4px 2px;
           white-space: nowrap;
+          text-decoration: underline;
+        }
+
+        .actions-cell > .action-link + .action-link {
+          margin-left: 20px;
         }
 
         .action-link {
@@ -2067,17 +2073,23 @@ export default function AdminPage() {
           border-radius: 3px;
         }
 
-        /* Pod-kategoriya qatori: nomdan oldin "└" belgisi va biroz surilish */
+        /* Pod-kategoriya qatori — ota'sidan yaqqol surilib, boshida
+           brend qizil "└" belgisi bilan ajralib turadi. Bir qarashda
+           "pod-kategoriya" ekani ko'rinadi. */
         .cat-child-cell {
-          padding-left: 32px !important;
+          padding-left: 56px !important;
           color: var(--secondary-text);
+          position: relative;
         }
 
         .cat-child-marker {
           display: inline-block;
-          margin-right: 8px;
-          color: var(--secondary-text);
-          font-weight: 400;
+          margin-right: 12px;
+          color: #F45B5B;              /* brend qizil */
+          font-size: 20px;
+          font-weight: 700;
+          line-height: 1;
+          vertical-align: -2px;
         }
 
         /* Ota-kategoriya dropdown va tugmalar bir qatorda */
