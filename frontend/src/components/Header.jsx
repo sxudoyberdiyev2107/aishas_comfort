@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useLanguage } from '../context/LanguageContext';
+import CatalogPanel from './CatalogPanel';
 
 const backendUrl = 'https://aishascomfort-production.up.railway.app/api';
 
@@ -13,6 +14,8 @@ export default function Header() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSticky, setIsSticky] = useState(false);
   const [cartCount, setCartCount] = useState(0);
+  // Desktop katalog paneli ochiq/yopiqligi
+  const [isCatalogOpen, setIsCatalogOpen] = useState(false);
   // Mobil menyudagi kategoriyalar bazadan yuklanadi. Arxivlangan
   // kategoriyalar server tomonidan (public GET /categories) yashirilgan
   // holda qaytadi.
@@ -98,20 +101,45 @@ export default function Header() {
             <span></span>
           </button>
 
-          {/* Logo */}
-          <div className="logo-section">
-            <Link href="/" className="logo-link">
-              <img 
-                src="/brand/Aishas_Comfort_Logo_Horizontal.svg" 
-                alt="Aisha's Comfort" 
-                className="logo-img logo-desktop" 
-              />
-              <img 
-                src="/brand/Aishas_Comfort_Symbol_Primary.svg" 
-                alt="Aisha's Comfort" 
-                className="logo-img logo-mobile" 
-              />
-            </Link>
+          {/* Logo + Katalog tugmasi (chap guruh) */}
+          <div className="header-left">
+            <div className="logo-section">
+              <Link href="/" className="logo-link">
+                <img
+                  src="/brand/Aishas_Comfort_Logo_Horizontal.svg"
+                  alt="Aisha's Comfort"
+                  className="logo-img logo-desktop"
+                />
+                <img
+                  src="/brand/Aishas_Comfort_Symbol_Primary.svg"
+                  alt="Aisha's Comfort"
+                  className="logo-img logo-mobile"
+                />
+              </Link>
+            </div>
+
+            {/* Katalog tugmasi — faqat desktop. Bosilganda chap panel ochiladi/yopiladi */}
+            <button
+              className={`catalog-btn ${isCatalogOpen ? 'open' : ''}`}
+              onClick={() => setIsCatalogOpen(prev => !prev)}
+              aria-expanded={isCatalogOpen}
+              aria-label={language === 'uz' ? 'Katalog' : 'Каталог'}
+            >
+              <span className="catalog-btn-icon" aria-hidden="true">
+                {isCatalogOpen ? (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M6 6l12 12M18 6L6 18" />
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M4 6h16M4 12h16M4 18h16" />
+                  </svg>
+                )}
+              </span>
+              <span className="catalog-btn-text">
+                {language === 'uz' ? 'Katalog' : 'Каталог'}
+              </span>
+            </button>
           </div>
 
           {/* Desktop Navigation */}
@@ -174,6 +202,9 @@ export default function Header() {
           </div>
         </div>
       </header>
+
+      {/* Desktop Katalog paneli (chapdan ochiladi) */}
+      <CatalogPanel isOpen={isCatalogOpen} onClose={() => setIsCatalogOpen(false)} />
 
       {/* Mobile Drawer Navigation Menu */}
       <div className={`mobile-drawer ${isMobileMenuOpen ? 'open' : ''}`}>
@@ -299,10 +330,56 @@ export default function Header() {
           }
         }
 
+        .header-left {
+          display: flex;
+          align-items: center;
+          gap: 20px;
+          height: 100%;
+        }
+
         .logo-link {
           display: flex;
           align-items: center;
           height: 100%;
+        }
+
+        /* Katalog tugmasi — faqat desktopda ko'rinadi (apelsin brend tugma) */
+        .catalog-btn {
+          display: none;
+          align-items: center;
+          gap: 8px;
+          height: 40px;
+          padding: 0 16px;
+          border-radius: 4px;
+          background-color: var(--cta-orange);
+          color: var(--white-surface);
+          font-family: var(--font-body);
+          font-weight: 600;
+          font-size: 14px;
+          text-transform: uppercase;
+          letter-spacing: 0.03em;
+          transition: background-color 200ms ease;
+        }
+
+        .catalog-btn:hover {
+          background-color: var(--cta-hover);
+        }
+
+        .catalog-btn-icon {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .catalog-btn-icon svg {
+          width: 18px;
+          height: 18px;
+        }
+
+        @media (min-width: 1024px) {
+          .catalog-btn {
+            display: inline-flex;
+          }
         }
 
         .logo-desktop {
