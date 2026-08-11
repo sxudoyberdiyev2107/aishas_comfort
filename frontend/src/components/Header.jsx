@@ -4,8 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useLanguage } from '../context/LanguageContext';
 import CatalogPanel from './CatalogPanel';
-
-const backendUrl = 'https://aishascomfort-production.up.railway.app/api';
+import MobileCatalog from './MobileCatalog';
 
 export default function Header() {
   const { language, changeLanguage, t } = useLanguage();
@@ -16,10 +15,9 @@ export default function Header() {
   const [cartCount, setCartCount] = useState(0);
   // Desktop katalog paneli ochiq/yopiqligi
   const [isCatalogOpen, setIsCatalogOpen] = useState(false);
-  // Mobil menyudagi kategoriyalar bazadan yuklanadi. Arxivlangan
-  // kategoriyalar server tomonidan (public GET /categories) yashirilgan
-  // holda qaytadi.
-  const [categoriesList, setCategoriesList] = useState([]);
+  // Mobil to'liq ekran katalog ochiq/yopiqligi (hamburger menyudagi
+  // "Katalog" tugmasidan ochiladi)
+  const [isMobileCatalogOpen, setIsMobileCatalogOpen] = useState(false);
 
   // Cart item counter listener
   useEffect(() => {
@@ -42,16 +40,6 @@ export default function Header() {
       window.removeEventListener('cartUpdated', updateCartCount);
       window.removeEventListener('storage', updateCartCount);
     };
-  }, []);
-
-  // Kategoriyalarni bazadan olish (public — arxivlanganlar chiqmaydi)
-  useEffect(() => {
-    let cancelled = false;
-    fetch(`${backendUrl}/categories`)
-      .then(res => res.ok ? res.json() : [])
-      .then(data => { if (!cancelled) setCategoriesList(data); })
-      .catch(() => { if (!cancelled) setCategoriesList([]); });
-    return () => { cancelled = true; };
   }, []);
 
   // Scroll listener for sticky styles
@@ -219,6 +207,9 @@ export default function Header() {
       {/* Desktop Katalog paneli (chapdan ochiladi) */}
       <CatalogPanel isOpen={isCatalogOpen} onClose={() => setIsCatalogOpen(false)} />
 
+      {/* Mobil to'liq ekran katalog (hamburger menyudagi "Katalog" tugmasidan) */}
+      <MobileCatalog isOpen={isMobileCatalogOpen} onClose={() => setIsMobileCatalogOpen(false)} />
+
       {/* Mobile Drawer Navigation Menu */}
       <div className={`mobile-drawer ${isMobileMenuOpen ? 'open' : ''}`}>
         <div className="mobile-drawer-header">
@@ -251,24 +242,21 @@ export default function Header() {
           </ul>
           
           <div className="mobile-drawer-divider"></div>
-          
-          <div className="mobile-drawer-section-title">
-            {language === 'uz' ? 'Kategoriyalar' : 'Категории'}
-          </div>
-          
-          <ul className="mobile-categories-list">
-            {categoriesList.map(cat => (
-              <li key={cat.id}>
-                <Link
-                  href={`/kategoriya/${cat.slug}`}
-                  className="mobile-cat-link"
-                  onClick={() => setIsMobileMenuOpen(false)}
-                >
-                  {(language === 'uz' ? cat.name_uz : cat.name_ru) || cat.slug}
-                </Link>
-              </li>
-            ))}
-          </ul>
+
+          {/* To'liq ekran katalogni ochish tugmasi — bosilganda drawer yopilib,
+              MobileCatalog (pod-kategoriyali, Wildberries mantiqi) ochiladi */}
+          <button
+            type="button"
+            className="mobile-catalog-btn"
+            onClick={() => { setIsMobileMenuOpen(false); setIsMobileCatalogOpen(true); }}
+          >
+            <span className="mobile-catalog-btn-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </span>
+            {language === 'uz' ? 'Katalog' : 'Каталог'}
+          </button>
         </nav>
       </div>
 
@@ -626,34 +614,41 @@ export default function Header() {
           margin: 20px 0;
         }
 
-        .mobile-drawer-section-title {
-          font-family: var(--font-headings);
-          font-size: 14px;
-          font-weight: 600;
-          text-transform: uppercase;
-          letter-spacing: 0.05em;
-          color: var(--secondary-text);
-          margin-bottom: 12px;
-        }
-
-        .mobile-categories-list {
-          list-style: none;
+        /* Katalog tugmasi (mobil drawer ichida) — to'liq ekran katalogni ochadi.
+           Brend coral, Manrope — desktopdagi Katalog tugmasiga hamohang. */
+        .mobile-catalog-btn {
           display: flex;
-          flex-direction: column;
-          gap: 12px;
-          padding: 0 0 20px 0;
+          align-items: center;
+          justify-content: center;
+          gap: 10px;
+          width: 100%;
+          height: 48px;
+          border: none;
+          border-radius: 8px;
+          background-color: var(--brand-coral);
+          color: var(--white-surface);
+          font-family: var(--font-manrope), var(--font-body);
+          font-size: 15px;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.03em;
+          cursor: pointer;
+          transition: background-color 200ms ease;
         }
 
-        .mobile-cat-link {
-          font-size: 14px;
-          color: var(--primary-text);
-          display: block;
-          padding: 4px 0;
-          transition: color 200ms ease;
+        .mobile-catalog-btn:hover {
+          background-color: var(--brand-coral-strong);
         }
 
-        .mobile-cat-link:hover {
-          color: var(--cta-orange);
+        .mobile-catalog-btn-icon {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .mobile-catalog-btn-icon svg {
+          width: 20px;
+          height: 20px;
         }
 
         /* Search Overlay */
