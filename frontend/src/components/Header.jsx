@@ -76,11 +76,21 @@ export default function Header() {
     }
   };
 
+  // To'liq ro'yxat — mobil menyu (drawer) shundan foydalanadi (o'zgarmaydi).
   const navItems = [
     { name: t('navigation.home'), path: '/' },
     { name: t('navigation.shop'), path: '/kategoriya/all' },
     { name: t('navigation.newArrivals'), path: '/kategoriya/yangi' },
     { name: t('navigation.promos'), path: '/kategoriya/aksiya' },
+    { name: t('navigation.about'), path: '/biz-haqimizda' },
+    { name: t('navigation.contact'), path: '/aloqa' }
+  ];
+
+  // Desktop yuqori menyu — "Yangi mahsulotlar" va "Aksiyalar" katalog
+  // paneliga ko'chirilgani uchun bu yerda faqat 4 band qoladi.
+  const desktopNavItems = [
+    { name: t('navigation.home'), path: '/' },
+    { name: t('navigation.shop'), path: '/kategoriya/all' },
     { name: t('navigation.about'), path: '/biz-haqimizda' },
     { name: t('navigation.contact'), path: '/aloqa' }
   ];
@@ -142,21 +152,23 @@ export default function Header() {
             </button>
           </div>
 
-          {/* Desktop Navigation */}
-          <nav className="desktop-nav" aria-label="Desktop navigation">
-            <ul>
-              {navItems.map((item, idx) => (
-                <li key={idx}>
-                  <Link href={item.path} className="nav-link">
-                    {item.name}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </nav>
+          {/* O'ng guruh: desktop menyu + boshqaruvlar (til/qidiruv/profil/savat) */}
+          <div className="header-right">
+            {/* Desktop Navigation */}
+            <nav className="desktop-nav" aria-label="Desktop navigation">
+              <ul>
+                {desktopNavItems.map((item, idx) => (
+                  <li key={idx}>
+                    <Link href={item.path} className="nav-link">
+                      {item.name}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </nav>
 
-          {/* Right Controls (Search, Account, Cart, Language Switcher) */}
-          <div className="header-controls">
+            {/* Right Controls (Search, Account, Cart, Language Switcher) */}
+            <div className="header-controls">
             {/* Language Switcher */}
             <div className="lang-switcher">
               <button 
@@ -199,6 +211,7 @@ export default function Header() {
               </svg>
               {cartCount > 0 && <span className="cart-counter">{cartCount}</span>}
             </Link>
+            </div>
           </div>
         </div>
       </header>
@@ -316,6 +329,15 @@ export default function Header() {
           align-items: center;
           justify-content: space-between;
           padding: 0 16px;
+          /* Brend shrifti — faqat header ichida (mobil drawer alohida, tegilmaydi) */
+          font-family: var(--font-manrope), var(--font-body);
+        }
+
+        /* O'ng guruh: desktop menyu + boshqaruvlar bitta chetda turadi */
+        .header-right {
+          display: flex;
+          align-items: center;
+          gap: 28px;
         }
 
         @media (min-width: 768px) {
@@ -343,18 +365,18 @@ export default function Header() {
           height: 100%;
         }
 
-        /* Katalog tugmasi — faqat desktopda ko'rinadi (apelsin brend tugma) */
+        /* Katalog tugmasi — faqat desktopda ko'rinadi (Warm Coral brend tugma) */
         .catalog-btn {
           display: none;
           align-items: center;
           gap: 8px;
-          height: 40px;
-          padding: 0 16px;
-          border-radius: 4px;
-          background-color: var(--cta-orange);
+          height: 42px;
+          padding: 0 18px;
+          border-radius: 6px;
+          background-color: var(--brand-coral);
           color: var(--white-surface);
-          font-family: var(--font-body);
-          font-weight: 600;
+          font-family: var(--font-manrope), var(--font-body);
+          font-weight: 700;
           font-size: 14px;
           text-transform: uppercase;
           letter-spacing: 0.03em;
@@ -362,7 +384,7 @@ export default function Header() {
         }
 
         .catalog-btn:hover {
-          background-color: var(--cta-hover);
+          background-color: var(--brand-coral-strong);
         }
 
         .catalog-btn-icon {
@@ -384,7 +406,7 @@ export default function Header() {
 
         .logo-desktop {
           display: none;
-          height: 48px;
+          height: 60px;
           width: auto;
         }
 
@@ -415,14 +437,14 @@ export default function Header() {
 
         .nav-link {
           font-size: 14px;
-          font-weight: 500;
-          color: var(--primary-text);
+          font-weight: 600;
+          color: var(--brand-navy);
           text-transform: uppercase;
           letter-spacing: 0.03em;
         }
 
         .nav-link:hover {
-          color: var(--cta-orange);
+          color: var(--brand-coral);
         }
 
         @media (min-width: 1024px) {
@@ -438,7 +460,7 @@ export default function Header() {
         }
 
         .control-btn {
-          color: var(--primary-text);
+          color: var(--brand-navy);
           display: flex;
           align-items: center;
           justify-content: center;
@@ -449,7 +471,7 @@ export default function Header() {
         }
 
         .control-btn:hover {
-          color: var(--cta-orange);
+          color: var(--brand-coral);
         }
 
         .icon {
@@ -465,7 +487,7 @@ export default function Header() {
           position: absolute;
           top: 6px;
           right: 6px;
-          background-color: var(--cta-orange);
+          background-color: var(--brand-coral);
           color: var(--white-surface);
           font-size: 10px;
           font-weight: 700;
@@ -492,7 +514,7 @@ export default function Header() {
         }
 
         .lang-btn.active {
-          color: var(--cta-orange);
+          color: var(--brand-coral);
         }
 
         .lang-separator {

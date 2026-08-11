@@ -13,6 +13,13 @@
   --secondary-text: #686868;
   --border-color: #E2E2DE;
   --beige-accent: #C89B70;
+
+  /* Aishas Comfort rasmiy brend palitrasi (brandbook) */
+  --brand-navy: #17233C;         /* Deep Navy — asosiy matn/chiziq */
+  --brand-coral: #F45B5B;        /* Warm Coral — accent */
+  --brand-coral-strong: #E24A4A; /* Coral hover holati uchun quyuqroq */
+  --brand-peach: #FFC27A;        /* Soft Peach — yumshoq accent */
+  --brand-cream: #FFF8F1;        /* Warm Cream — iliq fon */
   
   /* Spacing System (8px base) */
   --space-1: 8px;

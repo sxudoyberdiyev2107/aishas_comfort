@@ -1,4 +1,4 @@
-import { Inter, Oswald } from "next/font/google";
+import { Inter, Oswald, Manrope } from "next/font/google";
 import "./globals.css";
 import { LanguageProvider } from "../context/LanguageContext";
 import Header from "../components/Header";
@@ -16,6 +16,14 @@ const oswald = Oswald({
   variable: "--font-oswald",
 });
 
+// Manrope — rasmiy brend shrifti. --font-manrope o'zgaruvchisi orqali
+// Header va Katalog panelida ishlatiladi (qolgan saytga tegilmaydi).
+const manrope = Manrope({
+  subsets: ["latin", "cyrillic"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-manrope",
+});
+
 export const metadata = {
   title: "Aisha's Comfort | Ergonomik Mebel va Aksessuarlar",
   description: "Premium o'quv partalari, stullar, professional o'yin (gaming) kreslolari va kitob javonlari onlayn do'koni.",
@@ -26,7 +34,7 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="uz" className={`${inter.variable} ${oswald.variable}`}>
+    <html lang="uz" className={`${inter.variable} ${oswald.variable} ${manrope.variable}`}>
       <body>
         <LanguageProvider>
           <div className="app-layout">
