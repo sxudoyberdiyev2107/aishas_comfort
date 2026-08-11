@@ -234,26 +234,32 @@ export default function CatalogPanel({ isOpen, onClose }) {
           flex-direction: column;
         }
 
-        /* Maxsus havolalar — doim Warm Coral, ro'yxatdan chiziq bilan ajralgan */
+        /* Maxsus havolalar — yumshoq peach "pill" tugmalar, ro'yxatdan
+           chiziq bilan ajralgan. Nozik: kontent bo'ylab, ostma-ost. */
         .catalog-featured {
           display: flex;
           flex-direction: column;
-          padding: 14px 12px 10px;
+          align-items: flex-start;
+          gap: 8px;
+          padding: 14px 14px 12px;
           border-bottom: 1px solid rgba(23, 35, 60, 0.10);
         }
 
         .catalog-featured-item {
-          padding: 9px 12px;
-          border-radius: 8px;
-          font-size: 15px;
-          font-weight: 700;
+          display: inline-flex;
+          align-items: center;
+          padding: 8px 16px;
+          border-radius: 999px;
+          background-color: rgba(255, 194, 122, 0.30);
           color: var(--brand-coral);
-          transition: background-color 150ms ease;
+          font-size: 14px;
+          font-weight: 700;
+          transition: background-color 150ms ease, color 150ms ease;
         }
 
         .catalog-featured-item:hover {
-          background-color: rgba(255, 194, 122, 0.28);
-          color: var(--brand-coral);
+          background-color: rgba(255, 194, 122, 0.55);
+          color: var(--brand-coral-strong);
         }
 
         .catalog-main-list {
