@@ -214,7 +214,11 @@ export default function Header() {
       <div className={`mobile-drawer ${isMobileMenuOpen ? 'open' : ''}`}>
         <div className="mobile-drawer-header">
           <Link href="/" className="logo-link" onClick={() => setIsMobileMenuOpen(false)}>
-            AISHA'S COMFORT
+            <img
+              src="/brand/Aishas_Comfort_Logo_Horizontal.svg"
+              alt="Aisha's Comfort"
+              className="mobile-drawer-logo"
+            />
           </Link>
           <button 
             className="close-drawer" 
@@ -576,6 +580,14 @@ export default function Header() {
           align-items: center;
           justify-content: space-between;
           margin-bottom: 32px;
+        }
+
+        /* Mobil drawer logotipi — desktop headerdagi bir xil brend SVG.
+           Balandlik qatorga sig'adi, nisbati buzilmaydi (width:auto). */
+        .mobile-drawer-logo {
+          height: 30px;
+          width: auto;
+          display: block;
         }
 
         .close-drawer {
