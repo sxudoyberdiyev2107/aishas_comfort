@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useLanguage } from '../context/LanguageContext';
 import CatalogPanel from './CatalogPanel';
 import MobileCatalog from './MobileCatalog';
+import MobileBottomBar from './MobileBottomBar';
 
 export default function Header() {
   const { language, changeLanguage, t } = useLanguage();
@@ -209,6 +210,13 @@ export default function Header() {
 
       {/* Mobil to'liq ekran katalog (hamburger menyudagi "Katalog" tugmasidan) */}
       <MobileCatalog isOpen={isMobileCatalogOpen} onClose={() => setIsMobileCatalogOpen(false)} />
+
+      {/* Mobil pastki navigatsiya paneli — Katalog tugmasi aynan shu
+          MobileCatalog'ni ochadi; savat badge Header cartCount'idan */}
+      <MobileBottomBar
+        cartCount={cartCount}
+        onOpenCatalog={() => setIsMobileCatalogOpen(true)}
+      />
 
       {/* Mobile Drawer Navigation Menu */}
       <div className={`mobile-drawer ${isMobileMenuOpen ? 'open' : ''}`}>
