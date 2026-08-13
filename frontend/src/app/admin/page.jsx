@@ -28,6 +28,10 @@ export default function AdminPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
 
+  // Video Upload States (self-hosted mp4)
+  const [videoUploading, setVideoUploading] = useState(false);
+  const [videoUploadError, setVideoUploadError] = useState('');
+
   // Rang variantlari (faqat mavjud mahsulotni tahrirlashda ishlaydi)
   const [colors, setColors] = useState([]);
   const [colorForm, setColorForm] = useState({ name_uz: '', name_ru: '', hex_code: '#1E5AA8' });
@@ -52,7 +56,8 @@ export default function AdminPage() {
     old_price: '',
     category: 'parta-stullar',
     image_url: '',
-    video_url: ''
+    video_url: '',
+    assembly_video_url: ''
   });
 
   const backendUrl = 'https://aishascomfort-production.up.railway.app/api';
@@ -231,6 +236,88 @@ export default function AdminPage() {
   const handleRemoveImage = () => {
     setProductForm(prev => ({ ...prev, image_url: '' }));
     setUploadError('');
+  };
+
+  // 4d. mp4 video faylini serverga yuklash
+  // Rasm yuklash (handleImageUpload) bilan bir xil uslub: FormData,
+  // credentials: 'include', javobdagi { url } ni video_url state'ga saqlaymiz.
+  // Faqat endpoint /upload/video, fayl maydoni "video".
+  const handleVideoUpload = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+
+    setVideoUploadError('');
+
+    // Fayl turi tekshiruvi (backend faqat video/mp4 qabul qiladi)
+    if (file.type !== 'video/mp4') {
+      setVideoUploadError(language === 'uz'
+        ? 'Faqat mp4 formatdagi video yuklash mumkin.'
+        : 'Можно загружать только видео в формате mp4.');
+      e.target.value = '';
+      return;
+    }
+
+    // Hajm tekshiruvi (backend chegarasi - 25 MB)
+    if (file.size > 25 * 1024 * 1024) {
+      setVideoUploadError(language === 'uz'
+        ? 'Video hajmi 25 MB dan oshmasligi kerak.'
+        : 'Размер видео не должен превышать 25 МБ.');
+      e.target.value = '';
+      return;
+    }
+
+    setVideoUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('video', file); // <-- backend/routes/upload.js dagi "video" nomi bilan bir xil
+
+      const res = await fetch(`${backendUrl}/upload/video`, {
+        method: 'POST',
+        body: formData, // Content-Type ni QO'LDA yozmaymiz - brauzer o'zi qo'yadi
+        credentials: 'include'
+      });
+
+      if (res.status === 401 || res.status === 403) {
+        setIsAuthenticated(false);
+        return;
+      }
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.url) {
+          setProductForm(prev => ({ ...prev, video_url: data.url }));
+        } else {
+          setVideoUploadError(language === 'uz'
+            ? 'Server video manzilini qaytarmadi.'
+            : 'Сервер не вернул ссылку на видео.');
+        }
+      } else {
+        // Backend o'z xato matnini qaytarsa (25 MB dan katta / mp4 emas), o'shani ko'rsatamiz
+        let msg = language === 'uz'
+          ? 'Video yuklanmadi. Qaytadan urinib ko\'ring.'
+          : 'Видео не загружено. Попробуйте снова.';
+        try {
+          const errData = await res.json();
+          if (errData && errData.error) msg = errData.error;
+        } catch (parseErr) {
+          // javob JSON emas - standart xabar qoladi
+        }
+        setVideoUploadError(msg);
+      }
+    } catch (err) {
+      setVideoUploadError(language === 'uz'
+        ? 'Serverga ulanishda xatolik.'
+        : 'Ошибка соединения с сервером.');
+    } finally {
+      setVideoUploading(false);
+      e.target.value = ''; // bir xil faylni qayta tanlash mumkin bo'lsin
+    }
+  };
+
+  // 4e. Yuklangan videoni olib tashlash
+  const handleRemoveVideo = () => {
+    setProductForm(prev => ({ ...prev, video_url: '' }));
+    setVideoUploadError('');
   };
 
   // 5. Create or Update Product
@@ -571,7 +658,8 @@ export default function AdminPage() {
       old_price: prod.old_price || '',
       category: prod.category || 'parta-stullar',
       image_url: prod.image_url || '',
-      video_url: prod.video_url || ''
+      video_url: prod.video_url || '',
+      assembly_video_url: prod.assembly_video_url || ''
     });
   };
 
@@ -1123,13 +1211,68 @@ export default function AdminPage() {
                 </div>
                 {/* ===== RASM YUKLASH TUGADI ===== */}
 
+                {/* ===== MP4 VIDEO YUKLASH (self-hosted, vertikal 9:16) ===== */}
+                {/* Rasmlar yonida — mahsulotning asosiy videosi. video_url ga saqlanadi. */}
                 <div className="form-group">
-                  <label htmlFor="video-input">{language === 'uz' ? 'Video havolasi (YouTube)' : 'Ссылка на видео (YouTube)'}</label>
+                  <label htmlFor="video-file-input">
+                    {language === 'uz'
+                      ? 'Mahsulot videosi (mp4, vertikal 9:16)'
+                      : 'Видео товара (mp4, вертикальное 9:16)'}
+                  </label>
+
+                  <input
+                    type="file"
+                    id="video-file-input"
+                    accept="video/mp4"
+                    onChange={handleVideoUpload}
+                    disabled={videoUploading}
+                    className="file-input"
+                  />
+
+                  {videoUploading && (
+                    <p className="upload-status">
+                      {language === 'uz' ? 'Video yuklanmoqda...' : 'Видео загружается...'}
+                    </p>
+                  )}
+
+                  {videoUploadError && <p className="upload-error">{videoUploadError}</p>}
+
+                  {productForm.video_url && !videoUploading && (
+                    <div className="image-preview-row">
+                      {/* Kichik oldindan ko'rish — rasmlar bilan bir xil to'liq URL usuli (getImageSrc) */}
+                      <video
+                        src={getImageSrc(productForm.video_url)}
+                        controls
+                        style={{ maxWidth: '200px', borderRadius: '4px', display: 'block' }}
+                      />
+                      <div className="image-preview-info">
+                        <span className="image-path">{productForm.video_url}</span>
+                        <button
+                          type="button"
+                          onClick={handleRemoveVideo}
+                          className="remove-image-btn"
+                        >
+                          {language === 'uz' ? 'Videoni o\'chirish' : 'Удалить видео'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                {/* ===== MP4 VIDEO YUKLASH TUGADI ===== */}
+
+                {/* Yig'ish qo'llanmasi videosi (YouTube havola) — mp4 dan ALOHIDA maydon.
+                    Hozircha bazaga saqlanmaydi; keyingi bosqichda o'z DB ustuni qo'shiladi. */}
+                <div className="form-group">
+                  <label htmlFor="assembly-video-input">
+                    {language === 'uz'
+                      ? 'Yig\'ish qo\'llanmasi videosi (YouTube havola)'
+                      : 'Видео-инструкция по сборке (ссылка YouTube)'}
+                  </label>
                   <input
                     type="text"
-                    id="video-input"
-                    name="video_url"
-                    value={productForm.video_url}
+                    id="assembly-video-input"
+                    name="assembly_video_url"
+                    value={productForm.assembly_video_url}
                     onChange={handleFormChange}
                     placeholder="https://www.youtube.com/watch?v=..."
                     className="form-input"
@@ -1137,7 +1280,7 @@ export default function AdminPage() {
                 </div>
 
                 <div className="form-actions-row">
-                  <button type="submit" className="btn-primary flex-grow" disabled={uploading}>
+                  <button type="submit" className="btn-primary flex-grow" disabled={uploading || videoUploading}>
                     {t('admin.saveBtn')}
                   </button>
                   {isEditing && (
