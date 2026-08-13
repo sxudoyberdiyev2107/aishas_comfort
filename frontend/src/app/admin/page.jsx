@@ -31,6 +31,7 @@ export default function AdminPage() {
   // Video Upload States (self-hosted mp4)
   const [videoUploading, setVideoUploading] = useState(false);
   const [videoUploadError, setVideoUploadError] = useState('');
+  const [videoUploadProgress, setVideoUploadProgress] = useState(0); // 0-100 foiz
 
   // Rang variantlari (faqat mavjud mahsulotni tahrirlashda ishlaydi)
   const [colors, setColors] = useState([]);
@@ -239,11 +240,19 @@ export default function AdminPage() {
   };
 
   // 4d. mp4 video faylini serverga yuklash
-  // Rasm yuklash (handleImageUpload) bilan bir xil uslub: FormData,
-  // credentials: 'include', javobdagi { url } ni video_url state'ga saqlaymiz.
+  // Rasm yuklash (handleImageUpload) bilan bir xil mantiq: FormData,
+  // cookie bilan auth, javobdagi { url } ni video_url state'ga saqlaymiz.
   // Faqat endpoint /upload/video, fayl maydoni "video".
-  const handleVideoUpload = async (e) => {
-    const file = e.target.files && e.target.files[0];
+  //
+  // NEGA fetch EMAS, XMLHttpRequest?
+  // fetch brauzerda YUKLASH (upload) jarayonini o'lchay olmaydi — foizni
+  // bilib bo'lmaydi. XHR esa xhr.upload.onprogress orqali har lahzada
+  // qancha bayt ketganini beradi, shu bilan progress bar to'lib boradi.
+  // withCredentials = true — bu fetch'dagi credentials: 'include' ning
+  // aynan o'zi (HttpOnly admin_token cookie'si yuboriladi).
+  const handleVideoUpload = (e) => {
+    const input = e.target; // callback ichida ishlatamiz, shuning uchun saqlaymiz
+    const file = input.files && input.files[0];
     if (!file) return;
 
     setVideoUploadError('');
@@ -253,7 +262,7 @@ export default function AdminPage() {
       setVideoUploadError(language === 'uz'
         ? 'Faqat mp4 formatdagi video yuklash mumkin.'
         : 'Можно загружать только видео в формате mp4.');
-      e.target.value = '';
+      input.value = '';
       return;
     }
 
@@ -262,28 +271,49 @@ export default function AdminPage() {
       setVideoUploadError(language === 'uz'
         ? 'Video hajmi 25 MB dan oshmasligi kerak.'
         : 'Размер видео не должен превышать 25 МБ.');
-      e.target.value = '';
+      input.value = '';
       return;
     }
 
+    const formData = new FormData();
+    formData.append('video', file); // <-- backend/routes/upload.js dagi "video" nomi bilan bir xil
+
+    setVideoUploadProgress(0);
     setVideoUploading(true);
-    try {
-      const formData = new FormData();
-      formData.append('video', file); // <-- backend/routes/upload.js dagi "video" nomi bilan bir xil
 
-      const res = await fetch(`${backendUrl}/upload/video`, {
-        method: 'POST',
-        body: formData, // Content-Type ni QO'LDA yozmaymiz - brauzer o'zi qo'yadi
-        credentials: 'include'
-      });
+    // Yuklash tugagach (muvaffaqiyat ham, xato ham) bajariladigan tozalash
+    const finish = () => {
+      setVideoUploading(false);
+      input.value = ''; // bir xil faylni qayta tanlash mumkin bo'lsin
+    };
 
-      if (res.status === 401 || res.status === 403) {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${backendUrl}/upload/video`);
+    xhr.withCredentials = true; // = fetch'dagi credentials: 'include'
+    // Content-Type ni QO'LDA yozmaymiz - brauzer o'zi qo'yadi (boundary bilan)
+
+    // Yuklash jarayoni: 0% -> 100%
+    xhr.upload.onprogress = (ev) => {
+      if (ev.lengthComputable) {
+        setVideoUploadProgress(Math.round((ev.loaded / ev.total) * 100));
+      }
+    };
+
+    // Javob keldi (status har qanday bo'lishi mumkin)
+    xhr.onload = () => {
+      if (xhr.status === 401 || xhr.status === 403) {
         setIsAuthenticated(false);
+        finish();
         return;
       }
 
-      if (res.ok) {
-        const data = await res.json();
+      if (xhr.status >= 200 && xhr.status < 300) {
+        let data = null;
+        try {
+          data = JSON.parse(xhr.responseText);
+        } catch (parseErr) {
+          // javob JSON emas - quyida xato ko'rsatiladi
+        }
         if (data && data.url) {
           setProductForm(prev => ({ ...prev, video_url: data.url }));
         } else {
@@ -297,21 +327,26 @@ export default function AdminPage() {
           ? 'Video yuklanmadi. Qaytadan urinib ko\'ring.'
           : 'Видео не загружено. Попробуйте снова.';
         try {
-          const errData = await res.json();
+          const errData = JSON.parse(xhr.responseText);
           if (errData && errData.error) msg = errData.error;
         } catch (parseErr) {
           // javob JSON emas - standart xabar qoladi
         }
         setVideoUploadError(msg);
       }
-    } catch (err) {
+
+      finish();
+    };
+
+    // Tarmoq xatosi (serverga umuman yetib bormadi)
+    xhr.onerror = () => {
       setVideoUploadError(language === 'uz'
         ? 'Serverga ulanishda xatolik.'
         : 'Ошибка соединения с сервером.');
-    } finally {
-      setVideoUploading(false);
-      e.target.value = ''; // bir xil faylni qayta tanlash mumkin bo'lsin
-    }
+      finish();
+    };
+
+    xhr.send(formData);
   };
 
   // 4e. Yuklangan videoni olib tashlash
@@ -1230,9 +1265,32 @@ export default function AdminPage() {
                   />
 
                   {videoUploading && (
-                    <p className="upload-status">
-                      {language === 'uz' ? 'Video yuklanmoqda...' : 'Видео загружается...'}
-                    </p>
+                    <div className="video-progress-wrap">
+                      {/* Trek (fon) */}
+                      <div
+                        style={{
+                          width: '100%',
+                          height: '8px',
+                          backgroundColor: '#EDEDED',
+                          borderRadius: '4px',
+                          overflow: 'hidden'
+                        }}
+                      >
+                        {/* To'ldiruvchi — brend korall rangi, silliq kengayadi */}
+                        <div
+                          style={{
+                            width: `${videoUploadProgress}%`,
+                            height: '100%',
+                            backgroundColor: '#F45B5B',
+                            borderRadius: '4px',
+                            transition: 'width 0.2s'
+                          }}
+                        />
+                      </div>
+                      <p className="upload-status">
+                        {language === 'uz' ? 'Video yuklanmoqda' : 'Видео загружается'} — {videoUploadProgress}%
+                      </p>
+                    </div>
                   )}
 
                   {videoUploadError && <p className="upload-error">{videoUploadError}</p>}
@@ -2111,6 +2169,12 @@ export default function AdminPage() {
           font-size: 12px;
           color: var(--cta-orange);
           margin-top: 2px;
+        }
+
+        /* mp4 video yuklash progress bari (trek va to'ldiruvchi inline
+           stillar bilan — to'ldiruvchi kengligi foizga qarab o'zgaradi) */
+        .video-progress-wrap {
+          margin-top: 8px;
         }
 
         .upload-error {
