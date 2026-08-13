@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useLanguage } from '../../context/LanguageContext';
 import { getImageSrc } from '../../lib/imageUrl';
 import { COLOR_PALETTE } from '../../lib/colorPalette';
@@ -38,6 +38,15 @@ export default function AdminPage() {
   const [colorForm, setColorForm] = useState({ name_uz: '', name_ru: '', hex_code: '#1E5AA8' });
   const [colorError, setColorError] = useState('');
   const [colorImageUploadingId, setColorImageUploadingId] = useState(null);
+
+  // Mahsulotning UMUMIY rasmlari (galereya) — rangga bog'liq emas
+  const [productImages, setProductImages] = useState([]);
+  const [productImagesUploading, setProductImagesUploading] = useState(false);
+  const [productImagesError, setProductImagesError] = useState('');
+  // Eski bitta rasmni galereyaga ko'chirish (seed) ayni paytda ketyaptimi?
+  // Tahrirlash tugmasi tez-tez ikki marta bosilsa, rasm ikki marta
+  // qo'shilib qolmasligi uchun.
+  const seedingProductIdRef = useRef(null);
 
   // Kategoriyalar boshqaruvi
   // editingCategoryId = null  -> forma "yangi qo'shish" rejimida
@@ -676,6 +685,216 @@ export default function AdminPage() {
     }
   };
 
+  // ===== MAHSULOT RASMLARI (GALEREYA) =====
+  //
+  // Rang rasmlaridan farqi: bu rasmlar rangga emas, MAHSULOTGA bog'langan.
+  // Rangsiz mahsulotning galereyasi shu yerdan chiqadi.
+
+  // Rasmlar ro'yxatini bazadan qayta o'qiydi.
+  //
+  // syncMainImage — formadagi image_url ni asosiy (⭐) rasm bilan moslash.
+  // Backend asosiy rasmni products.image_url ga yozadi; agar formadagi
+  // qiymat eski holicha qolsa, admin "Saqlash" bosganda eski manzil
+  // qaytib yozilib, ikkalasi rasezlashib ketardi. Shuning uchun rasm
+  // qo'shilgandan/o'chirilgandan/asosiy almashgandan keyin sinxronlaymiz.
+  //
+  // Formani ochishda esa sinxronlanmaydi: galereyasi yo'q eski
+  // mahsulotning image_url'i o'chib ketmasligi kerak.
+  const refreshProductImages = async (productId, { syncMainImage = false } = {}) => {
+    try {
+      const res = await fetch(`${backendUrl}/products/${productId}/images`);
+      if (!res.ok) return;
+
+      const data = await res.json();
+      setProductImages(data);
+
+      if (syncMainImage) {
+        const primary = data.find(img => img.is_primary);
+        setProductForm(prev => ({ ...prev, image_url: primary ? primary.image_url : '' }));
+      }
+    } catch (err) {
+      console.error('Mahsulot rasmlarini yuklashda xato:', err.message);
+    }
+  };
+
+  // Tahrirlash rejimi ochilganda galereyani tayyorlaydi.
+  //
+  // SEAM (eski mahsulotlar): galereya bo'sh, lekin mahsulotning eski
+  // bitta rasmi (image_url) bor bo'lsa — o'sha rasm galereyaga BIRINCHI
+  // rasm sifatida ko'chiriladi. Backend uni avtomatik ⭐ asosiy qiladi
+  // va products.image_url ni sinxron saqlaydi. Shunday qilib eski
+  // mahsulot ham galereyali bo'lib qoladi va rasmi yo'qolmaydi.
+  //
+  // Faqat BIR MARTA bajariladi: galereya bo'sh ekani qat'iy tekshiriladi
+  // (seed'dan keyin ro'yxatda 1 ta rasm bo'ladi, demak shart boshqa
+  // bajarilmaydi), ustiga ref bilan bir vaqtda ikki marta ketishi
+  // to'siladi.
+  const loadGalleryForEdit = async (productId, existingImageUrl) => {
+    try {
+      const res = await fetch(`${backendUrl}/products/${productId}/images`);
+      if (!res.ok) return;
+
+      const data = await res.json();
+
+      const needsSeed = data.length === 0
+        && existingImageUrl
+        && seedingProductIdRef.current !== productId;
+
+      if (needsSeed) {
+        seedingProductIdRef.current = productId;
+        try {
+          const seedRes = await fetch(`${backendUrl}/products/${productId}/images`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image_url: existingImageUrl }),
+            credentials: 'include'
+          });
+
+          if (seedRes.status === 401 || seedRes.status === 403) {
+            setIsAuthenticated(false);
+            return;
+          }
+
+          if (seedRes.ok) {
+            // Ro'yxatni yangilaymiz va formadagi image_url ni asosiy
+            // rasm bilan moslaymiz — "Saqlash" uni qaytarib yubormasin
+            await refreshProductImages(productId, { syncMainImage: true });
+            return;
+          }
+          // Ko'chirib bo'lmadi — bo'sh galereya bilan davom etaveramiz
+        } finally {
+          seedingProductIdRef.current = null;
+        }
+      }
+
+      setProductImages(data);
+    } catch (err) {
+      console.error('Galereyani tayyorlashda xato:', err.message);
+    }
+  };
+
+  // Bir nechta rasmni ketma-ket yuklash.
+  // Har fayl uchun: avval /api/upload (rang rasmidagi kabi), keyin
+  // qaytgan manzilni mahsulotga bog'laymiz.
+  const handleProductImagesUpload = async (e) => {
+    const input = e.target;
+    const files = Array.from(input.files || []);
+    if (files.length === 0) return;
+
+    setProductImagesError('');
+    setProductImagesUploading(true);
+
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+    let failedCount = 0;
+
+    try {
+      for (const file of files) {
+        // Backend faqat shu formatlarni va 5 MB gacha qabul qiladi
+        if (!allowedTypes.includes(file.type) || file.size > 5 * 1024 * 1024) {
+          failedCount++;
+          continue;
+        }
+
+        const formData = new FormData();
+        formData.append('image', file);
+
+        const uploadRes = await fetch(`${backendUrl}/upload`, {
+          method: 'POST',
+          body: formData,
+          credentials: 'include'
+        });
+
+        if (uploadRes.status === 401 || uploadRes.status === 403) {
+          setIsAuthenticated(false);
+          return;
+        }
+
+        if (!uploadRes.ok) {
+          failedCount++;
+          continue;
+        }
+
+        const { url } = await uploadRes.json();
+
+        const linkRes = await fetch(`${backendUrl}/products/${editingId}/images`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image_url: url }),
+          credentials: 'include'
+        });
+
+        if (!linkRes.ok) failedCount++;
+      }
+
+      if (failedCount > 0) {
+        setProductImagesError(language === 'uz'
+          ? `${failedCount} ta rasm yuklanmadi (faqat JPG, PNG, WEBP va 5 MB gacha).`
+          : `${failedCount} изображений не загружено (только JPG, PNG, WEBP и до 5 МБ).`);
+      }
+
+      await refreshProductImages(editingId, { syncMainImage: true });
+    } catch (err) {
+      setProductImagesError('Server connection error.');
+    } finally {
+      setProductImagesUploading(false);
+      input.value = ''; // bir xil fayllarni qayta tanlash mumkin bo'lsin
+    }
+  };
+
+  // Rasmni ASOSIY qilish (⭐). Backend qolgan rasmlardan belgini oladi
+  // va products.image_url ni ham yangilaydi.
+  const handleSetPrimaryImage = async (imageId) => {
+    setProductImagesError('');
+    try {
+      const res = await fetch(`${backendUrl}/products/images/${imageId}/primary`, {
+        method: 'PATCH',
+        credentials: 'include'
+      });
+
+      if (res.status === 401 || res.status === 403) {
+        setIsAuthenticated(false);
+        return;
+      }
+
+      if (res.ok) {
+        await refreshProductImages(editingId, { syncMainImage: true });
+      } else {
+        setProductImagesError(language === 'uz'
+          ? 'Asosiy rasmni belgilab bo\'lmadi.'
+          : 'Не удалось назначить основное изображение.');
+      }
+    } catch (err) {
+      setProductImagesError('Server connection error.');
+    }
+  };
+
+  const handleDeleteProductImage = async (imageId) => {
+    setProductImagesError('');
+    try {
+      const res = await fetch(`${backendUrl}/products/images/${imageId}`, {
+        method: 'DELETE',
+        credentials: 'include'
+      });
+
+      if (res.status === 401 || res.status === 403) {
+        setIsAuthenticated(false);
+        return;
+      }
+
+      if (res.ok) {
+        // Asosiy rasm o'chirilgan bo'lsa, backend keyingisini asosiy
+        // qiladi — shuning uchun bu yerda ham sinxronlaymiz
+        await refreshProductImages(editingId, { syncMainImage: true });
+      } else {
+        setProductImagesError(language === 'uz'
+          ? 'Rasmni o\'chirib bo\'lmadi.'
+          : 'Не удалось удалить изображение.');
+      }
+    } catch (err) {
+      setProductImagesError('Server connection error.');
+    }
+  };
+
   // 7. Load Product into Form for Edit
   const handleEditProduct = (prod) => {
     setIsEditing(true);
@@ -683,7 +902,11 @@ export default function AdminPage() {
     setUploadError('');
     setColorError('');
     setColorForm({ name_uz: '', name_ru: '', hex_code: '#1E5AA8' });
+    setProductImagesError('');
     fetchColors(prod.id);
+    // Galereyani tayyorlaymiz: bo'sh bo'lsa, eski bitta rasm birinchi
+    // galereya rasmi sifatida ko'chiriladi (seed).
+    loadGalleryForEdit(prod.id, prod.image_url || '');
     setProductForm({
       name_uz: prod.name_uz || '',
       name_ru: prod.name_ru || '',
@@ -705,6 +928,8 @@ export default function AdminPage() {
     setColorError('');
     setColors([]);
     setColorForm({ name_uz: '', name_ru: '', hex_code: '#1E5AA8' });
+    setProductImages([]);
+    setProductImagesError('');
     setProductForm({
       name_uz: '',
       name_ru: '',
@@ -1203,7 +1428,12 @@ export default function AdminPage() {
                   </div>
                 </div>
 
-                {/* ===== RASM YUKLASH (fayl tanlash) ===== */}
+                {/* ===== RASM YUKLASH (fayl tanlash) =====
+                    FAQAT YARATISH rejimida. Tahrirlashda rasmlarga
+                    quyidagi "Mahsulot rasmlari (galereya)" bloki to'liq
+                    egalik qiladi — asosiy rasm bir joyda, ⭐ orqali
+                    belgilanadi. */}
+                {!isEditing && (
                 <div className="form-group">
                   <label htmlFor="img-input">{t('admin.image')}</label>
 
@@ -1244,6 +1474,7 @@ export default function AdminPage() {
                     </div>
                   )}
                 </div>
+                )}
                 {/* ===== RASM YUKLASH TUGADI ===== */}
 
                 {/* ===== MP4 VIDEO YUKLASH (self-hosted, vertikal 9:16) ===== */}
@@ -1348,6 +1579,90 @@ export default function AdminPage() {
                   )}
                 </div>
               </form>
+
+              {/* ===== MAHSULOT RASMLARI (GALEREYA) ===== */}
+              <div className="colors-section">
+                <h3 className="colors-title">
+                  {language === 'uz' ? 'Mahsulot rasmlari (galereya)' : 'Изображения товара (галерея)'}
+                </h3>
+
+                {!isEditing ? (
+                  <p className="colors-hint">
+                    {language === 'uz'
+                      ? 'Galereya rasmlarini qo\'shish uchun avval mahsulotni saqlang, so\'ng uni ro\'yxatdan "Tahrirlash" tugmasi bilan oching.'
+                      : 'Чтобы добавить изображения галереи, сначала сохраните товар, затем откройте его кнопкой «Редактировать» из списка.'}
+                  </p>
+                ) : (
+                  <>
+                    <p className="colors-hint">
+                      {language === 'uz'
+                        ? 'Bu rasmlar rangga bog\'liq emas — rangsiz mahsulotning galereyasi shu yerdan chiqadi. ⭐ belgili rasm asosiy hisoblanadi va katalogda ko\'rinadi.'
+                        : 'Эти изображения не привязаны к цвету — из них формируется галерея товара без цветов. Изображение с ⭐ считается основным и показывается в каталоге.'}
+                    </p>
+
+                    {productImagesError && <div className="error-banner">{productImagesError}</div>}
+
+                    <div className="product-images-grid">
+                      {productImages.map(img => (
+                        <div
+                          className={`product-image-item ${img.is_primary ? 'is-primary' : ''}`}
+                          key={img.id}
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={getImageSrc(img.image_url)}
+                            alt=""
+                            className="product-image-thumb"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteProductImage(img.id)}
+                            className="color-image-remove"
+                            aria-label={language === 'uz' ? 'Rasmni o\'chirish' : 'Удалить изображение'}
+                          >
+                            ×
+                          </button>
+
+                          {img.is_primary ? (
+                            <span className="primary-badge">
+                              ⭐ {language === 'uz' ? 'Asosiy' : 'Основное'}
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleSetPrimaryImage(img.id)}
+                              className="set-primary-btn"
+                            >
+                              {language === 'uz' ? 'Asosiy qilish' : 'Сделать основным'}
+                            </button>
+                          )}
+                        </div>
+                      ))}
+
+                      {productImages.length === 0 && (
+                        <span className="colors-hint">
+                          {language === 'uz' ? 'Hali galereya rasmi yo\'q' : 'Пока нет изображений галереи'}
+                        </span>
+                      )}
+                    </div>
+
+                    <label className="btn-secondary color-upload-btn">
+                      {productImagesUploading
+                        ? (language === 'uz' ? 'Rasmlar yuklanmoqda...' : 'Изображения загружаются...')
+                        : (language === 'uz' ? '+ Rasmlar qo\'shish' : '+ Добавить фото')}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        onChange={handleProductImagesUpload}
+                        disabled={productImagesUploading}
+                        hidden
+                      />
+                    </label>
+                  </>
+                )}
+              </div>
+              {/* ===== MAHSULOT RASMLARI TUGADI ===== */}
 
               {/* ===== RANG VARIANTLARI ===== */}
               <div className="colors-section">
@@ -2753,6 +3068,59 @@ export default function AdminPage() {
           font-size: 12px;
           padding: 6px 12px;
           cursor: pointer;
+        }
+
+        /* Mahsulot galereyasi (umumiy rasmlar) */
+        .product-images-grid {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 12px;
+          align-items: flex-start;
+          margin-bottom: 12px;
+        }
+
+        .product-image-item {
+          position: relative;
+          width: 84px;
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+
+        .product-image-thumb {
+          width: 84px;
+          height: 84px;
+          object-fit: cover;
+          border-radius: 3px;
+          border: 1px solid var(--border-color);
+          display: block;
+        }
+
+        /* Asosiy rasm — brend korall ramka */
+        .product-image-item.is-primary .product-image-thumb {
+          border: 2px solid #F45B5B;
+        }
+
+        .primary-badge {
+          font-size: 11px;
+          font-weight: 700;
+          color: #F45B5B;
+          text-align: center;
+        }
+
+        .set-primary-btn {
+          font-size: 11px;
+          padding: 3px 4px;
+          border: 1px solid var(--border-color);
+          border-radius: 3px;
+          background: none;
+          color: var(--secondary-text);
+          cursor: pointer;
+        }
+
+        .set-primary-btn:hover {
+          border-color: #F45B5B;
+          color: #F45B5B;
         }
 
         .color-add-block {
