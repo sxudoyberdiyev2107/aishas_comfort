@@ -1,3 +1,5 @@
+BEGIN;
+
 -- 008_product_sizes_and_images.sql
 -- Multi-image galleries for color-less products + size variants with
 -- per-size price. Model 1: COLOR drives images, SIZE drives price
@@ -40,3 +42,5 @@ ALTER TABLE order_items
     ADD COLUMN IF NOT EXISTS size_name_uz VARCHAR(100);
 ALTER TABLE order_items
     ADD COLUMN IF NOT EXISTS size_name_ru VARCHAR(100);
+
+COMMIT;
