@@ -186,8 +186,57 @@ async function loadProductColors(productId) {
   }));
 }
 
+// Mahsulotlarning UMUMIY rasmlarini o'qiydi (rangga bog'liq emas).
+// Rangi yo'q mahsulotning galereyasi shu jadvaldan chiqadi.
+//
+// Natija: { [product_id]: [rasm qatorlari] }. Rasmi yo'q mahsulot
+// kalitda umuman bo'lmaydi — chaqiruvchi tomonda `|| []` ishlatiladi.
+//
+// Tartib: avval ASOSIY rasm (is_primary), keyin sort_order, keyin id.
+async function loadProductImages(productIds) {
+  if (!productIds || productIds.length === 0) return {};
+
+  const result = await db.query(
+    'SELECT * FROM product_images WHERE product_id = ANY($1::int[]) ORDER BY is_primary DESC, sort_order, id',
+    [productIds]
+  );
+
+  return result.rows.reduce((acc, row) => {
+    (acc[row.product_id] = acc[row.product_id] || []).push(row);
+    return acc;
+  }, {});
+}
+
+// Mahsulotlarning o'lcham variantlarini o'qiydi.
+// Har o'lchamning O'Z NARXI bor — tanlangan o'lcham saytda
+// ko'rsatiladigan narxni almashtiradi.
+//
+// Natija: { [product_id]: [o'lcham qatorlari] } — loadProductImages kabi.
+async function loadProductSizes(productIds) {
+  if (!productIds || productIds.length === 0) return {};
+
+  const result = await db.query(
+    'SELECT * FROM product_sizes WHERE product_id = ANY($1::int[]) ORDER BY sort_order, id',
+    [productIds]
+  );
+
+  return result.rows.reduce((acc, row) => {
+    (acc[row.product_id] = acc[row.product_id] || []).push(row);
+    return acc;
+  }, {});
+}
+
 // Rang kodi "#1E5AA8" ko'rinishida bo'lishi shart
 const isValidHexCode = (value) => typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value);
+
+// O'lcham narxi: musbat son bo'lishi shart. Bo'sh/matn/manfiy qabul
+// qilinmaydi. Qaytaradi: to'g'ri bo'lsa son, aks holda null.
+const parsePriceValue = (value) => {
+  if (value === null || value === undefined || value === '') return null;
+  const num = Number(value);
+  if (!Number.isFinite(num) || num < 0) return null;
+  return num;
+};
 
 // Mahsulotlarni bazadan o'qish uchun umumiy SELECT.
 // Bazada faqat category_id (raqam) saqlanadi, sayt esa category
@@ -198,9 +247,15 @@ const isValidHexCode = (value) => typeof value === 'string' && /^#[0-9a-fA-F]{6}
 // Mahsulot kartochkasida "Savatga" tugmasi shu maydonga qarab ishlaydi:
 // rangli mahsulotda avval rang tanlash kerak, shuning uchun kartochkadan
 // to'g'ridan-to'g'ri savatga qo'shilmaydi.
+// has_sizes — mahsulotda o'lcham variantlari bormi? O'lcham narxni
+// o'zgartirgani uchun bunday mahsulotda ham avval o'lcham tanlanadi.
+//
+// Rasmlar ro'yxatga QO'SHILMAYDI (faqat bayroqlar) — ro'yxat yengil
+// qolishi uchun. To'liq rasmlar bitta mahsulot sahifasida yuklanadi.
 const PRODUCT_SELECT = `
   SELECT p.*, c.slug AS category,
-         EXISTS (SELECT 1 FROM product_colors pc WHERE pc.product_id = p.id) AS has_colors
+         EXISTS (SELECT 1 FROM product_colors pc WHERE pc.product_id = p.id) AS has_colors,
+         EXISTS (SELECT 1 FROM product_sizes ps WHERE ps.product_id = p.id) AS has_sizes
   FROM products p
   LEFT JOIN categories c ON c.id = p.category_id
 `;
@@ -271,6 +326,14 @@ router.get('/products/:id', async (req, res) => {
       }
       // Rang variantlarini rasmlari bilan qo'shamiz (bo'lmasa — bo'sh ro'yxat)
       product.colors = await loadProductColors(product.id);
+      // Umumiy rasmlar (rangsiz mahsulot galereyasi) va o'lchamlar.
+      // Ikkalasi ham ixtiyoriy: bo'lmasa bo'sh ro'yxat qaytadi.
+      const [imagesByProduct, sizesByProduct] = await Promise.all([
+        loadProductImages([product.id]),
+        loadProductSizes([product.id])
+      ]);
+      product.images = imagesByProduct[product.id] || [];
+      product.sizes = sizesByProduct[product.id] || [];
       res.json(product);
     } else {
       res.status(404).json({ message: 'Product not found' });
@@ -280,8 +343,8 @@ router.get('/products/:id', async (req, res) => {
     const prod = mockProducts.find(p => p.id === parseInt(id));
     if (prod && (isAdmin || isPubliclyVisible(prod))) {
       const product = isAdmin ? prod : sanitizeProductForPublic(prod);
-      // Zaxira ro'yxatda ranglar saqlanmaydi
-      res.json({ ...product, colors: [] });
+      // Zaxira ro'yxatda ranglar, rasmlar va o'lchamlar saqlanmaydi
+      res.json({ ...product, colors: [], images: [], sizes: [] });
     } else {
       res.status(404).json({ message: 'Product not found' });
     }
@@ -1050,6 +1113,301 @@ router.delete('/colors/images/:imageId', authMiddleware, async (req, res) => {
   } catch (err) {
     console.error('Rang rasmini o\'chirishda xato:', err.message);
     res.status(500).json({ message: 'Rasmni o\'chirib bo\'lmadi' });
+  }
+});
+
+// ==========================================
+// 5B. UMUMIY RASMLAR (admin uchun)
+// ==========================================
+//
+// Bu rasmlar RANGGA bog'liq emas — rangi yo'q mahsulotning galereyasi
+// shu yerdan chiqadi. Ranglardagi kabi: rasm avval /api/upload orqali
+// yuklanadi, bu yerga faqat uning manzili (/uploads/...) yoziladi.
+//
+// ASOSIY RASM (is_primary):
+// Mahsulotning bitta rasmi "asosiy" bo'ladi va u products.image_url
+// bilan DOIM sinxron turadi. Sababi: katalog kartochkasi, savatcha va
+// buyurtmalar hammasi products.image_url ga tayanadi — u eskirmasligi
+// kerak.
+//
+// Bu bo'limda zaxira (mock) mantiq yo'q — ranglar bo'limidagi kabi.
+
+// GET mahsulotning umumiy rasmlari
+router.get('/products/:id/images', async (req, res) => {
+  try {
+    const imagesByProduct = await loadProductImages([req.params.id]);
+    res.json(imagesByProduct[req.params.id] || []);
+  } catch (err) {
+    console.error('Mahsulot rasmlarini o\'qishda xato:', err.message);
+    res.status(500).json({ message: 'Rasmlarni o\'qib bo\'lmadi' });
+  }
+});
+
+// POST mahsulotga rasm qo'shish
+//
+// Birinchi rasm avtomatik ASOSIY bo'ladi va products.image_url ga
+// yoziladi — shunda admin alohida "asosiy qilish" bosishi shart emas.
+router.post('/products/:id/images', authMiddleware, async (req, res) => {
+  const { id } = req.params;
+  const { image_url } = req.body;
+
+  if (!image_url) {
+    return res.status(400).json({ message: 'Rasm manzili yuborilmadi' });
+  }
+
+  try {
+    const productCheck = await db.query('SELECT id FROM products WHERE id = $1', [id]);
+    if (productCheck.rows.length === 0) {
+      return res.status(404).json({ message: 'Mahsulot topilmadi' });
+    }
+
+    // Yangi rasm ro'yxat oxiriga qo'shiladi. image_count = 0 bo'lsa —
+    // bu birinchi rasm, demak asosiy bo'ladi.
+    const statsResult = await db.query(
+      'SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order, COUNT(*)::int AS image_count FROM product_images WHERE product_id = $1',
+      [id]
+    );
+    const { next_order, image_count } = statsResult.rows[0];
+    const isFirstImage = image_count === 0;
+
+    const result = await db.query(
+      'INSERT INTO product_images (product_id, image_url, sort_order, is_primary) VALUES ($1, $2, $3, $4) RETURNING *',
+      [id, image_url, next_order, isFirstImage]
+    );
+
+    // Asosiy rasm products.image_url bilan sinxron turishi kerak
+    if (isFirstImage) {
+      await db.query('UPDATE products SET image_url = $1 WHERE id = $2', [image_url, id]);
+    }
+
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('Mahsulot rasmini saqlashda xato:', err.message);
+    res.status(500).json({ message: 'Rasmni saqlab bo\'lmadi' });
+  }
+});
+
+// DELETE mahsulot rasmini o'chirish
+//
+// Asosiy rasm o'chirilsa, mahsulot rasmsiz qolib ketmasligi uchun
+// qolganlaridan birinchisi yangi asosiy bo'ladi. Umuman rasm qolmasa —
+// products.image_url bo'shatiladi.
+router.delete('/products/images/:imageId', authMiddleware, async (req, res) => {
+  try {
+    const deleted = await db.query(
+      'DELETE FROM product_images WHERE id = $1 RETURNING *',
+      [req.params.imageId]
+    );
+
+    if (deleted.rows.length === 0) {
+      return res.status(404).json({ message: 'Rasm topilmadi' });
+    }
+
+    const removedImage = deleted.rows[0];
+
+    // Oddiy rasm o'chirildi — asosiy rasm o'zgarmaydi
+    if (!removedImage.is_primary) {
+      return res.json({ success: true });
+    }
+
+    // Asosiy rasm o'chirildi: keyingisini asosiy qilamiz
+    const nextResult = await db.query(
+      'SELECT * FROM product_images WHERE product_id = $1 ORDER BY sort_order, id LIMIT 1',
+      [removedImage.product_id]
+    );
+
+    if (nextResult.rows.length > 0) {
+      const nextImage = nextResult.rows[0];
+      await db.query('UPDATE product_images SET is_primary = TRUE WHERE id = $1', [nextImage.id]);
+      await db.query('UPDATE products SET image_url = $1 WHERE id = $2', [nextImage.image_url, removedImage.product_id]);
+      return res.json({ success: true, new_primary_id: nextImage.id });
+    }
+
+    // Rasm qolmadi
+    await db.query('UPDATE products SET image_url = NULL WHERE id = $1', [removedImage.product_id]);
+    res.json({ success: true, new_primary_id: null });
+  } catch (err) {
+    console.error('Mahsulot rasmini o\'chirishda xato:', err.message);
+    res.status(500).json({ message: 'Rasmni o\'chirib bo\'lmadi' });
+  }
+});
+
+// PATCH rasmni ASOSIY qilish
+//
+// Bitta so'rovda: shu mahsulotning boshqa rasmlarida is_primary = FALSE,
+// tanlanganida TRUE. Keyin products.image_url ham yangilanadi.
+router.patch('/products/images/:imageId/primary', authMiddleware, async (req, res) => {
+  const { imageId } = req.params;
+
+  try {
+    const imageResult = await db.query('SELECT * FROM product_images WHERE id = $1', [imageId]);
+    if (imageResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Rasm topilmadi' });
+    }
+
+    const image = imageResult.rows[0];
+
+    // (id = $1) shartli ifoda: tanlangan qatorga TRUE, qolganiga FALSE
+    await db.query(
+      'UPDATE product_images SET is_primary = (id = $1) WHERE product_id = $2',
+      [imageId, image.product_id]
+    );
+
+    await db.query(
+      'UPDATE products SET image_url = $1 WHERE id = $2',
+      [image.image_url, image.product_id]
+    );
+
+    res.json({ ...image, is_primary: true });
+  } catch (err) {
+    console.error('Asosiy rasmni belgilashda xato:', err.message);
+    res.status(500).json({ message: 'Asosiy rasmni belgilab bo\'lmadi' });
+  }
+});
+
+// ==========================================
+// 5C. O'LCHAM VARIANTLARI (admin uchun)
+// ==========================================
+//
+// Har o'lchamning O'Z NARXI bor. Saytda o'lcham tanlanganda
+// ko'rsatiladigan narx o'sha o'lchamniki bo'ladi.
+//
+// O'lcham RANGDAN MUSTAQIL: rang rasmni, o'lcham narxni boshqaradi
+// (rang x o'lcham matritsasi yo'q).
+//
+// Ranglardagi kabi: o'lchamlar ixtiyoriy, o'lchamsiz mahsulot
+// avvalgidek ishlayveradi. Zaxira (mock) mantiq bu yerda ham yo'q.
+
+// GET mahsulotning o'lchamlari
+router.get('/products/:id/sizes', async (req, res) => {
+  try {
+    const sizesByProduct = await loadProductSizes([req.params.id]);
+    res.json(sizesByProduct[req.params.id] || []);
+  } catch (err) {
+    console.error('O\'lchamlarni o\'qishda xato:', err.message);
+    res.status(500).json({ message: 'O\'lchamlarni o\'qib bo\'lmadi' });
+  }
+});
+
+// POST yangi o'lcham qo'shish
+router.post('/products/:id/sizes', authMiddleware, async (req, res) => {
+  const { id } = req.params;
+  const { name_uz, name_ru, price, old_price } = req.body;
+
+  if (!name_uz || !String(name_uz).trim()) {
+    return res.status(400).json({ message: 'O\'lcham nomi (o\'zbekcha) to\'ldirilishi shart' });
+  }
+
+  const priceValue = parsePriceValue(price);
+  if (priceValue === null) {
+    return res.status(400).json({ message: 'O\'lcham narxi to\'g\'ri son bo\'lishi kerak' });
+  }
+
+  // old_price ixtiyoriy: bo'sh bo'lsa NULL, yozilgan bo'lsa to'g'ri son bo'lishi shart
+  const hasOldPrice = old_price !== undefined && old_price !== null && old_price !== '';
+  const oldPriceValue = hasOldPrice ? parsePriceValue(old_price) : null;
+  if (hasOldPrice && oldPriceValue === null) {
+    return res.status(400).json({ message: 'Eski narx to\'g\'ri son bo\'lishi kerak' });
+  }
+
+  try {
+    const productCheck = await db.query('SELECT id FROM products WHERE id = $1', [id]);
+    if (productCheck.rows.length === 0) {
+      return res.status(404).json({ message: 'Mahsulot topilmadi' });
+    }
+
+    // Yangi o'lcham ro'yxat oxiriga qo'shiladi
+    const orderResult = await db.query(
+      'SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order FROM product_sizes WHERE product_id = $1',
+      [id]
+    );
+
+    const result = await db.query(
+      'INSERT INTO product_sizes (product_id, name_uz, name_ru, price, old_price, sort_order) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+      [id, name_uz, name_ru || null, priceValue, oldPriceValue, orderResult.rows[0].next_order]
+    );
+
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('O\'lcham qo\'shishda xato:', err.message);
+    res.status(500).json({ message: 'O\'lchamni saqlab bo\'lmadi' });
+  }
+});
+
+// PUT o'lchamni tahrirlash (nomi va narxi)
+router.put('/sizes/:sizeId', authMiddleware, async (req, res) => {
+  const { sizeId } = req.params;
+  const { name_uz, name_ru, price, old_price } = req.body;
+
+  if (!name_uz || !String(name_uz).trim()) {
+    return res.status(400).json({ message: 'O\'lcham nomi (o\'zbekcha) to\'ldirilishi shart' });
+  }
+
+  const priceValue = parsePriceValue(price);
+  if (priceValue === null) {
+    return res.status(400).json({ message: 'O\'lcham narxi to\'g\'ri son bo\'lishi kerak' });
+  }
+
+  const hasOldPrice = old_price !== undefined && old_price !== null && old_price !== '';
+  const oldPriceValue = hasOldPrice ? parsePriceValue(old_price) : null;
+  if (hasOldPrice && oldPriceValue === null) {
+    return res.status(400).json({ message: 'Eski narx to\'g\'ri son bo\'lishi kerak' });
+  }
+
+  try {
+    const result = await db.query(
+      'UPDATE product_sizes SET name_uz = $1, name_ru = $2, price = $3, old_price = $4 WHERE id = $5 RETURNING *',
+      [name_uz, name_ru || null, priceValue, oldPriceValue, sizeId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'O\'lcham topilmadi' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('O\'lchamni tahrirlashda xato:', err.message);
+    res.status(500).json({ message: 'O\'lchamni yangilab bo\'lmadi' });
+  }
+});
+
+// PATCH o'lchamning "mavjud / tugagan" holati
+//
+// Rangdagi kabi: tugagan o'lcham saytdan o'chmaydi — xira bo'lib
+// turadi va tanlab bo'lmaydi.
+router.patch('/sizes/:sizeId/availability', authMiddleware, async (req, res) => {
+  const { is_available } = req.body;
+
+  if (typeof is_available !== 'boolean') {
+    return res.status(400).json({ message: 'is_available maydoni true yoki false bo\'lishi kerak' });
+  }
+
+  try {
+    const result = await db.query(
+      'UPDATE product_sizes SET is_available = $1 WHERE id = $2 RETURNING *',
+      [is_available, req.params.sizeId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'O\'lcham topilmadi' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('O\'lcham holatini o\'zgartirishda xato:', err.message);
+    res.status(500).json({ message: 'O\'lcham holatini o\'zgartirib bo\'lmadi' });
+  }
+});
+
+// DELETE o'lchamni o'chirish
+router.delete('/sizes/:sizeId', authMiddleware, async (req, res) => {
+  try {
+    const result = await db.query('DELETE FROM product_sizes WHERE id = $1 RETURNING id', [req.params.sizeId]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'O\'lcham topilmadi' });
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error('O\'lchamni o\'chirishda xato:', err.message);
+    res.status(500).json({ message: 'O\'lchamni o\'chirib bo\'lmadi' });
   }
 });
 
