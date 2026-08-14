@@ -6,6 +6,11 @@ import { getImageSrc } from '../../lib/imageUrl';
 import { COLOR_PALETTE } from '../../lib/colorPalette';
 import CategoryIcon, { CATEGORY_ICON_LIST } from '../../components/CategoryIcon';
 
+// Rasm yuklash chegaralari — backend ham aynan shularni qabul qiladi
+const MAX_BATCH_IMAGES = 10; // bir martada nechta rasm tanlash mumkin
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5 MB
+
 export default function AdminPage() {
   const { t, language } = useLanguage();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -38,11 +43,17 @@ export default function AdminPage() {
   const [colorForm, setColorForm] = useState({ name_uz: '', name_ru: '', hex_code: '#1E5AA8' });
   const [colorError, setColorError] = useState('');
   const [colorImageUploadingId, setColorImageUploadingId] = useState(null);
+  // Rang rasmlarini partiya bilan yuklashda: "3/7 yuklanmoqda"
+  const [colorImagesProgress, setColorImagesProgress] = useState({ done: 0, total: 0 });
 
   // Mahsulotning UMUMIY rasmlari (galereya) — rangga bog'liq emas
   const [productImages, setProductImages] = useState([]);
   const [productImagesUploading, setProductImagesUploading] = useState(false);
   const [productImagesError, setProductImagesError] = useState('');
+  // Partiya yuklashda nechanchi fayl ketyapti: "3/7 yuklanmoqda"
+  const [productImagesProgress, setProductImagesProgress] = useState({ done: 0, total: 0 });
+  // "⭐ Asosiy rasm" zonasidagi alohida yuklash (Almashtirish tugmasi)
+  const [primaryUploading, setPrimaryUploading] = useState(false);
   // Eski bitta rasmni galereyaga ko'chirish (seed) ayni paytda ketyaptimi?
   // Tahrirlash tugmasi tez-tez ikki marta bosilsa, rasm ikki marta
   // qo'shilib qolmasligi uchun.
@@ -593,34 +604,31 @@ export default function AdminPage() {
     }
   };
 
-  // Rangga rasm yuklash: avval /api/upload ga fayl, keyin qaytgan
-  // manzilni rangga bog'laymiz
-  const handleColorImageUpload = async (colorId, e) => {
-    const file = e.target.files && e.target.files[0];
-    if (!file) return;
+  // ===== RASM YUKLASHNING UMUMIY YORDAMCHISI =====
+  //
+  // Tanlangan fayllarni KETMA-KET yuklaydi. Har fayl uchun ikki qadam:
+  //   1) /api/upload ga faylning o'zi ketadi
+  //   2) qaytgan manzil linkImage(url) orqali bazaga bog'lanadi
+  //      (mahsulot galereyasi yoki rang rasmi — chaqiruvchi hal qiladi)
+  //
+  // linkImage fetch javobini (Response) qaytarishi kerak — bu yerda
+  // faqat uning holati tekshiriladi, tanasi (body) o'qilmaydi.
+  // onProgress(nechanchi, jami) — "3/7 yuklanmoqda" ko'rsatish uchun.
+  //
+  // Natija: { failed, authFailed }. authFailed = sessiya tugagan.
+  const uploadImagesSequentially = async (files, linkImage, onProgress) => {
+    let failed = 0;
 
-    setColorError('');
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (onProgress) onProgress(i + 1, files.length);
 
-    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-    if (!allowedTypes.includes(file.type)) {
-      setColorError(language === 'uz'
-        ? 'Faqat JPG, PNG yoki WEBP formatidagi rasmlarni yuklash mumkin.'
-        : 'Можно загружать только изображения в формате JPG, PNG или WEBP.');
-      e.target.value = '';
-      return;
-    }
+      // Backend faqat shu formatlarni va 5 MB gacha qabul qiladi
+      if (!ALLOWED_IMAGE_TYPES.includes(file.type) || file.size > MAX_IMAGE_SIZE) {
+        failed++;
+        continue;
+      }
 
-    if (file.size > 5 * 1024 * 1024) {
-      setColorError(language === 'uz'
-        ? 'Rasm hajmi 5 MB dan oshmasligi kerak.'
-        : 'Размер изображения не должен превышать 5 МБ.');
-      e.target.value = '';
-      return;
-    }
-
-    setColorImageUploadingId(colorId);
-
-    try {
       const formData = new FormData();
       formData.append('image', file);
 
@@ -631,34 +639,113 @@ export default function AdminPage() {
       });
 
       if (uploadRes.status === 401 || uploadRes.status === 403) {
+        return { failed, authFailed: true };
+      }
+
+      if (!uploadRes.ok) {
+        failed++;
+        continue;
+      }
+
+      const { url } = await uploadRes.json();
+      const linkRes = await linkImage(url);
+
+      if (linkRes.status === 401 || linkRes.status === 403) {
+        return { failed, authFailed: true };
+      }
+
+      if (!linkRes.ok) failed++;
+    }
+
+    return { failed, authFailed: false };
+  };
+
+  // Tanlangan fayllardan dastlabki 10 tasini oladi.
+  // Ortiqchasi haqida xabar qaytadi (xabar bo'lmasa — bo'sh ro'yxat).
+  const takeBatch = (fileList) => {
+    const selected = Array.from(fileList || []);
+    const files = selected.slice(0, MAX_BATCH_IMAGES);
+    const notes = [];
+
+    if (selected.length > MAX_BATCH_IMAGES) {
+      notes.push(language === 'uz'
+        ? `Bir martada ${MAX_BATCH_IMAGES} tagacha rasm yuklash mumkin — dastlabki ${MAX_BATCH_IMAGES} tasi olindi.`
+        : `За один раз можно загрузить до ${MAX_BATCH_IMAGES} изображений — взяты первые ${MAX_BATCH_IMAGES}.`);
+    }
+
+    return { files, notes };
+  };
+
+  const failedImagesNote = (failed) => (language === 'uz'
+    ? `${failed} ta rasm yuklanmadi (faqat JPG, PNG, WEBP va 5 MB gacha).`
+    : `${failed} изображений не загружено (только JPG, PNG, WEBP и до 5 МБ).`);
+
+  // Rangga rasm yuklash: bir martada 10 tagacha (galereyadagi kabi).
+  // Rangning birinchi rasmini backend avtomatik ASOSIY qiladi.
+  const handleColorImageUpload = async (colorId, e) => {
+    const input = e.target;
+    const { files, notes } = takeBatch(input.files);
+    if (files.length === 0) return;
+
+    setColorError('');
+    setColorImageUploadingId(colorId);
+    setColorImagesProgress({ done: 0, total: files.length });
+
+    try {
+      const { failed, authFailed } = await uploadImagesSequentially(
+        files,
+        (url) => fetch(`${backendUrl}/colors/${colorId}/images`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image_url: url }),
+          credentials: 'include'
+        }),
+        (done, total) => setColorImagesProgress({ done, total })
+      );
+
+      if (authFailed) {
         setIsAuthenticated(false);
         return;
       }
 
-      if (!uploadRes.ok) {
-        setColorError(language === 'uz' ? 'Rasmni yuklab bo\'lmadi.' : 'Не удалось загрузить изображение.');
-        return;
-      }
+      if (failed > 0) notes.push(failedImagesNote(failed));
+      if (notes.length > 0) setColorError(notes.join(' '));
 
-      const { url } = await uploadRes.json();
-
-      const linkRes = await fetch(`${backendUrl}/colors/${colorId}/images`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image_url: url }),
-        credentials: 'include'
-      });
-
-      if (linkRes.ok) {
-        fetchColors(editingId);
-      } else {
-        setColorError(language === 'uz' ? 'Rasmni rangga bog\'lab bo\'lmadi.' : 'Не удалось привязать изображение к цвету.');
-      }
+      // Partiya tugagach ro'yxat BIR MARTA yangilanadi
+      fetchColors(editingId);
     } catch (err) {
       setColorError('Server connection error.');
     } finally {
       setColorImageUploadingId(null);
-      e.target.value = '';
+      setColorImagesProgress({ done: 0, total: 0 });
+      input.value = ''; // bir xil fayllarni qayta tanlash mumkin bo'lsin
+    }
+  };
+
+  // Rang rasmini o'sha rangning ASOSIY rasmi qilish.
+  // products.image_url ga tegmaydi — u umumiy galereyaniki.
+  const handleSetPrimaryColorImage = async (imageId) => {
+    setColorError('');
+    try {
+      const res = await fetch(`${backendUrl}/colors/images/${imageId}/primary`, {
+        method: 'PATCH',
+        credentials: 'include'
+      });
+
+      if (res.status === 401 || res.status === 403) {
+        setIsAuthenticated(false);
+        return;
+      }
+
+      if (res.ok) {
+        fetchColors(editingId);
+      } else {
+        setColorError(language === 'uz'
+          ? 'Asosiy rasmni belgilab bo\'lmadi.'
+          : 'Не удалось назначить основное изображение.');
+      }
+    } catch (err) {
+      setColorError('Server connection error.');
     }
   };
 
@@ -773,71 +860,113 @@ export default function AdminPage() {
     }
   };
 
-  // Bir nechta rasmni ketma-ket yuklash.
-  // Har fayl uchun: avval /api/upload (rang rasmidagi kabi), keyin
-  // qaytgan manzilni mahsulotga bog'laymiz.
+  // Bir martada 10 tagacha rasmni ketma-ket yuklash ("Qo'shimcha rasmlar").
+  // Har fayl uchun: avval /api/upload, keyin qaytgan manzil mahsulotga
+  // bog'lanadi. Ro'yxat partiya TUGAGACH bir marta yangilanadi.
   const handleProductImagesUpload = async (e) => {
     const input = e.target;
-    const files = Array.from(input.files || []);
+    const { files, notes } = takeBatch(input.files);
     if (files.length === 0) return;
 
     setProductImagesError('');
     setProductImagesUploading(true);
-
-    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-    let failedCount = 0;
+    setProductImagesProgress({ done: 0, total: files.length });
 
     try {
-      for (const file of files) {
-        // Backend faqat shu formatlarni va 5 MB gacha qabul qiladi
-        if (!allowedTypes.includes(file.type) || file.size > 5 * 1024 * 1024) {
-          failedCount++;
-          continue;
-        }
-
-        const formData = new FormData();
-        formData.append('image', file);
-
-        const uploadRes = await fetch(`${backendUrl}/upload`, {
-          method: 'POST',
-          body: formData,
-          credentials: 'include'
-        });
-
-        if (uploadRes.status === 401 || uploadRes.status === 403) {
-          setIsAuthenticated(false);
-          return;
-        }
-
-        if (!uploadRes.ok) {
-          failedCount++;
-          continue;
-        }
-
-        const { url } = await uploadRes.json();
-
-        const linkRes = await fetch(`${backendUrl}/products/${editingId}/images`, {
+      const { failed, authFailed } = await uploadImagesSequentially(
+        files,
+        (url) => fetch(`${backendUrl}/products/${editingId}/images`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ image_url: url }),
           credentials: 'include'
-        });
+        }),
+        (done, total) => setProductImagesProgress({ done, total })
+      );
 
-        if (!linkRes.ok) failedCount++;
+      if (authFailed) {
+        setIsAuthenticated(false);
+        return;
       }
 
-      if (failedCount > 0) {
-        setProductImagesError(language === 'uz'
-          ? `${failedCount} ta rasm yuklanmadi (faqat JPG, PNG, WEBP va 5 MB gacha).`
-          : `${failedCount} изображений не загружено (только JPG, PNG, WEBP и до 5 МБ).`);
-      }
+      if (failed > 0) notes.push(failedImagesNote(failed));
+      if (notes.length > 0) setProductImagesError(notes.join(' '));
 
       await refreshProductImages(editingId, { syncMainImage: true });
     } catch (err) {
       setProductImagesError('Server connection error.');
     } finally {
       setProductImagesUploading(false);
+      setProductImagesProgress({ done: 0, total: 0 });
       input.value = ''; // bir xil fayllarni qayta tanlash mumkin bo'lsin
+    }
+  };
+
+  // "⭐ Asosiy rasm" zonasidagi yuklash (Almashtirish / bo'sh dropzone).
+  //
+  // Yangi rasm galereyaga oddiy qo'shiladi, so'ng ASOSIY qilinadi.
+  // Eski asosiy rasm O'CHIRILMAYDI — u shunchaki "Qo'shimcha rasmlar"
+  // qatoriga tushadi. Manba bitta: product_images + is_primary.
+  const handlePrimaryImageUpload = async (e) => {
+    const input = e.target;
+    const file = input.files && input.files[0];
+    if (!file) return;
+
+    setProductImagesError('');
+    setPrimaryUploading(true);
+
+    // Yaratilgan qatorni bilib olamiz: backend birinchi rasmni o'zi
+    // asosiy qiladi, qolgan hollarda PATCH kerak bo'ladi
+    let createdImage = null;
+
+    try {
+      const { failed, authFailed } = await uploadImagesSequentially([file], async (url) => {
+        const res = await fetch(`${backendUrl}/products/${editingId}/images`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image_url: url }),
+          credentials: 'include'
+        });
+        if (res.ok) createdImage = await res.json();
+        return res;
+      });
+
+      if (authFailed) {
+        setIsAuthenticated(false);
+        return;
+      }
+
+      if (failed > 0 || !createdImage) {
+        setProductImagesError(language === 'uz'
+          ? 'Asosiy rasmni yuklab bo\'lmadi (faqat JPG, PNG, WEBP va 5 MB gacha).'
+          : 'Не удалось загрузить основное изображение (только JPG, PNG, WEBP и до 5 МБ).');
+        return;
+      }
+
+      if (!createdImage.is_primary) {
+        const patchRes = await fetch(`${backendUrl}/products/images/${createdImage.id}/primary`, {
+          method: 'PATCH',
+          credentials: 'include'
+        });
+
+        if (patchRes.status === 401 || patchRes.status === 403) {
+          setIsAuthenticated(false);
+          return;
+        }
+
+        if (!patchRes.ok) {
+          setProductImagesError(language === 'uz'
+            ? 'Rasm yuklandi, lekin asosiy qilib bo\'lmadi — pastdagi "Asosiy qilish" tugmasini bosing.'
+            : 'Изображение загружено, но не стало основным — нажмите «Сделать основным» ниже.');
+        }
+      }
+
+      await refreshProductImages(editingId, { syncMainImage: true });
+    } catch (err) {
+      setProductImagesError('Server connection error.');
+    } finally {
+      setPrimaryUploading(false);
+      input.value = '';
     }
   };
 
@@ -894,6 +1023,12 @@ export default function AdminPage() {
       setProductImagesError('Server connection error.');
     }
   };
+
+  // Galereyani ikkiga ajratamiz: tepadagi "⭐ Asosiy rasm" zonasi va
+  // pastdagi "Qo'shimcha rasmlar" gridi. Ma'lumot manbasi BITTA —
+  // product_images jadvali va uning is_primary ustuni.
+  const primaryImage = productImages.find(img => img.is_primary) || null;
+  const extraImages = productImages.filter(img => !img.is_primary);
 
   // 7. Load Product into Form for Edit
   const handleEditProduct = (prod) => {
@@ -1602,12 +1737,69 @@ export default function AdminPage() {
 
                     {productImagesError && <div className="error-banner">{productImagesError}</div>}
 
+                    {/* ----- TEPA: ⭐ ASOSIY RASM ZONASI ----- */}
+                    <h4 className="gallery-subtitle">
+                      ⭐ {language === 'uz' ? 'Asosiy rasm' : 'Основное изображение'}
+                    </h4>
+
+                    <div className="primary-image-zone">
+                      {primaryImage ? (
+                        <div className="primary-image-frame">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={getImageSrc(primaryImage.image_url)}
+                            alt=""
+                            className="primary-image"
+                          />
+                        </div>
+                      ) : (
+                        // Rasm yo'q — bo'sh dropzone, bosilganda fayl tanlanadi
+                        <label className="primary-image-empty">
+                          {primaryUploading
+                            ? (language === 'uz' ? 'Yuklanmoqda...' : 'Загрузка...')
+                            : (language === 'uz' ? 'Asosiy rasmni yuklang' : 'Загрузите основное изображение')}
+                          <input
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp"
+                            onChange={handlePrimaryImageUpload}
+                            disabled={primaryUploading || productImagesUploading}
+                            hidden
+                          />
+                        </label>
+                      )}
+
+                      <div className="primary-image-side">
+                        {primaryImage && (
+                          <label className="btn-secondary color-upload-btn">
+                            {primaryUploading
+                              ? (language === 'uz' ? 'Yuklanmoqda...' : 'Загрузка...')
+                              : (language === 'uz' ? 'Almashtirish' : 'Заменить')}
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/png,image/webp"
+                              onChange={handlePrimaryImageUpload}
+                              disabled={primaryUploading || productImagesUploading}
+                              hidden
+                            />
+                          </label>
+                        )}
+
+                        <p className="colors-hint">
+                          {language === 'uz'
+                            ? 'Bu rasm katalog kartochkasida ko\'rinadi. Almashtirilganda eski rasm o\'chmaydi — pastdagi "Qo\'shimcha rasmlar" qatoriga tushadi.'
+                            : 'Это изображение показывается в карточке каталога. При замене старое не удаляется — оно переходит в «Дополнительные изображения» ниже.'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* ----- PAST: QO'SHIMCHA RASMLAR ----- */}
+                    <h4 className="gallery-subtitle">
+                      {language === 'uz' ? 'Qo\'shimcha rasmlar' : 'Дополнительные изображения'}
+                    </h4>
+
                     <div className="product-images-grid">
-                      {productImages.map(img => (
-                        <div
-                          className={`product-image-item ${img.is_primary ? 'is-primary' : ''}`}
-                          key={img.id}
-                        >
+                      {extraImages.map(img => (
+                        <div className="product-image-item" key={img.id}>
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
                             src={getImageSrc(img.image_url)}
@@ -1623,39 +1815,37 @@ export default function AdminPage() {
                             ×
                           </button>
 
-                          {img.is_primary ? (
-                            <span className="primary-badge">
-                              ⭐ {language === 'uz' ? 'Asosiy' : 'Основное'}
-                            </span>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => handleSetPrimaryImage(img.id)}
-                              className="set-primary-btn"
-                            >
-                              {language === 'uz' ? 'Asosiy qilish' : 'Сделать основным'}
-                            </button>
-                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleSetPrimaryImage(img.id)}
+                            className="set-primary-btn"
+                          >
+                            {language === 'uz' ? 'Asosiy qilish' : 'Сделать основным'}
+                          </button>
                         </div>
                       ))}
 
-                      {productImages.length === 0 && (
+                      {extraImages.length === 0 && (
                         <span className="colors-hint">
-                          {language === 'uz' ? 'Hali galereya rasmi yo\'q' : 'Пока нет изображений галереи'}
+                          {language === 'uz' ? 'Qo\'shimcha rasm yo\'q' : 'Дополнительных изображений нет'}
                         </span>
                       )}
                     </div>
 
                     <label className="btn-secondary color-upload-btn">
                       {productImagesUploading
-                        ? (language === 'uz' ? 'Rasmlar yuklanmoqda...' : 'Изображения загружаются...')
-                        : (language === 'uz' ? '+ Rasmlar qo\'shish' : '+ Добавить фото')}
+                        ? (productImagesProgress.total > 1
+                          ? `${productImagesProgress.done}/${productImagesProgress.total} ${language === 'uz' ? 'yuklanmoqda...' : 'загружается...'}`
+                          : (language === 'uz' ? 'Rasmlar yuklanmoqda...' : 'Изображения загружаются...'))
+                        : (language === 'uz'
+                          ? `+ Rasmlar qo'shish (${MAX_BATCH_IMAGES} tagacha)`
+                          : `+ Добавить фото (до ${MAX_BATCH_IMAGES})`)}
                       <input
                         type="file"
-                        accept="image/*"
+                        accept="image/jpeg,image/png,image/webp"
                         multiple
                         onChange={handleProductImagesUpload}
-                        disabled={productImagesUploading}
+                        disabled={productImagesUploading || primaryUploading}
                         hidden
                       />
                     </label>
@@ -1723,10 +1913,14 @@ export default function AdminPage() {
                           </button>
                         </div>
 
-                        {/* Shu rangning rasmlari */}
+                        {/* Shu rangning rasmlari — ⭐ belgili rasm o'sha
+                            rangning asosiy rasmi (umumiy galereyadagidek) */}
                         <div className="color-images-row">
                           {color.images.map(img => (
-                            <div className="color-image-item" key={img.id}>
+                            <div
+                              className={`color-image-item ${img.is_primary ? 'is-primary' : ''}`}
+                              key={img.id}
+                            >
                               {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img
                                 src={getImageSrc(img.image_url)}
@@ -1741,6 +1935,20 @@ export default function AdminPage() {
                               >
                                 ×
                               </button>
+
+                              {img.is_primary ? (
+                                <span className="primary-badge">
+                                  ⭐ {language === 'uz' ? 'Asosiy' : 'Основное'}
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleSetPrimaryColorImage(img.id)}
+                                  className="set-primary-btn"
+                                >
+                                  {language === 'uz' ? 'Asosiy qilish' : 'Сделать основным'}
+                                </button>
+                              )}
                             </div>
                           ))}
 
@@ -1753,11 +1961,16 @@ export default function AdminPage() {
 
                         <label className="btn-secondary color-upload-btn">
                           {colorImageUploadingId === color.id
-                            ? (language === 'uz' ? 'Yuklanmoqda...' : 'Загрузка...')
-                            : (language === 'uz' ? '+ Rasm qo\'shish' : '+ Добавить фото')}
+                            ? (colorImagesProgress.total > 1
+                              ? `${colorImagesProgress.done}/${colorImagesProgress.total} ${language === 'uz' ? 'yuklanmoqda...' : 'загружается...'}`
+                              : (language === 'uz' ? 'Yuklanmoqda...' : 'Загрузка...'))
+                            : (language === 'uz'
+                              ? `+ Rasm qo'shish (${MAX_BATCH_IMAGES} tagacha)`
+                              : `+ Добавить фото (до ${MAX_BATCH_IMAGES})`)}
                           <input
                             type="file"
                             accept="image/jpeg,image/png,image/webp"
+                            multiple
                             onChange={(e) => handleColorImageUpload(color.id, e)}
                             disabled={colorImageUploadingId !== null}
                             hidden
@@ -3031,21 +3244,36 @@ export default function AdminPage() {
           display: flex;
           flex-wrap: wrap;
           gap: 8px;
-          align-items: center;
+          align-items: flex-start;
           margin-bottom: 10px;
         }
 
         .color-image-item {
           position: relative;
+          width: 72px;
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+
+        /* Rang rasmlari kichikroq — tugma matni ham kichikroq */
+        .color-image-item .set-primary-btn,
+        .color-image-item .primary-badge {
+          font-size: 10px;
         }
 
         .color-image-thumb {
-          width: 56px;
-          height: 56px;
+          width: 72px;
+          aspect-ratio: 3 / 4;
           object-fit: cover;
           border-radius: 3px;
           border: 1px solid var(--border-color);
           display: block;
+        }
+
+        /* Rangning asosiy rasmi — brend korall ramka */
+        .color-image-item.is-primary .color-image-thumb {
+          border: 2px solid #F45B5B;
         }
 
         .color-image-remove {
@@ -3071,6 +3299,66 @@ export default function AdminPage() {
         }
 
         /* Mahsulot galereyasi (umumiy rasmlar) */
+        .gallery-subtitle {
+          font-size: 13px;
+          font-weight: 700;
+          color: var(--primary-text);
+          margin: 14px 0 8px;
+        }
+
+        /* ⭐ Asosiy rasm zonasi — katta rasm + yonida Almashtirish */
+        .primary-image-zone {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 16px;
+          align-items: flex-start;
+          margin-bottom: 4px;
+        }
+
+        .primary-image-frame {
+          width: 150px;
+          aspect-ratio: 3 / 4;
+          border: 2px solid #F45B5B;
+          border-radius: 4px;
+          overflow: hidden;
+        }
+
+        .primary-image {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
+        }
+
+        /* Asosiy rasm yo'q — bosiladigan bo'sh joy */
+        .primary-image-empty {
+          width: 150px;
+          aspect-ratio: 3 / 4;
+          border: 2px dashed var(--border-color);
+          border-radius: 4px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          text-align: center;
+          padding: 12px;
+          font-size: 12px;
+          color: var(--secondary-text);
+          cursor: pointer;
+        }
+
+        .primary-image-empty:hover {
+          border-color: #F45B5B;
+          color: #F45B5B;
+        }
+
+        .primary-image-side {
+          display: flex;
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 8px;
+          max-width: 280px;
+        }
+
         .product-images-grid {
           display: flex;
           flex-wrap: wrap;
@@ -3089,16 +3377,11 @@ export default function AdminPage() {
 
         .product-image-thumb {
           width: 84px;
-          height: 84px;
+          aspect-ratio: 3 / 4;
           object-fit: cover;
           border-radius: 3px;
           border: 1px solid var(--border-color);
           display: block;
-        }
-
-        /* Asosiy rasm — brend korall ramka */
-        .product-image-item.is-primary .product-image-thumb {
-          border: 2px solid #F45B5B;
         }
 
         .primary-badge {

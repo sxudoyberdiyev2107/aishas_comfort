@@ -174,9 +174,11 @@ async function loadProductColors(productId) {
 
   // Barcha rasmlarni bitta so'rovda olamiz (har rang uchun alohida
   // so'rov yubormaslik uchun)
+  // Tartib: avval o'sha rangning ASOSIY rasmi (is_primary), keyin
+  // sort_order, keyin id — umumiy galereyadagi (loadProductImages) kabi
   const colorIds = colorsResult.rows.map(c => c.id);
   const imagesResult = await db.query(
-    'SELECT * FROM product_color_images WHERE color_id = ANY($1::int[]) ORDER BY sort_order, id',
+    'SELECT * FROM product_color_images WHERE color_id = ANY($1::int[]) ORDER BY is_primary DESC, sort_order, id',
     [colorIds]
   );
 
@@ -1082,14 +1084,18 @@ router.post('/colors/:colorId/images', authMiddleware, async (req, res) => {
       return res.status(404).json({ message: 'Rang topilmadi' });
     }
 
-    const orderResult = await db.query(
-      'SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order FROM product_color_images WHERE color_id = $1',
+    // Rangning BIRINCHI rasmi avtomatik ASOSIY bo'ladi — admin alohida
+    // tugma bosishi shart emas. (products.image_url ga TEGILMAYDI: rang
+    // rasmi mahsulotning umumiy asosiy rasmini boshqarmaydi.)
+    const statsResult = await db.query(
+      'SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order, COUNT(*)::int AS image_count FROM product_color_images WHERE color_id = $1',
       [colorId]
     );
+    const { next_order, image_count } = statsResult.rows[0];
 
     const result = await db.query(
-      'INSERT INTO product_color_images (color_id, image_url, sort_order) VALUES ($1, $2, $3) RETURNING *',
-      [colorId, image_url, orderResult.rows[0].next_order]
+      'INSERT INTO product_color_images (color_id, image_url, sort_order, is_primary) VALUES ($1, $2, $3, $4) RETURNING *',
+      [colorId, image_url, next_order, image_count === 0]
     );
 
     res.status(201).json(result.rows[0]);
@@ -1100,19 +1106,70 @@ router.post('/colors/:colorId/images', authMiddleware, async (req, res) => {
 });
 
 // DELETE rang rasmini o'chirish
+//
+// Asosiy rasm o'chirilsa, rang asosiysiz qolmasligi uchun qolganlaridan
+// birinchisi yangi asosiy bo'ladi (umumiy galereyadagi kabi).
 router.delete('/colors/images/:imageId', authMiddleware, async (req, res) => {
   try {
-    const result = await db.query(
-      'DELETE FROM product_color_images WHERE id = $1 RETURNING id',
+    const deleted = await db.query(
+      'DELETE FROM product_color_images WHERE id = $1 RETURNING *',
       [req.params.imageId]
     );
-    if (result.rows.length === 0) {
+    if (deleted.rows.length === 0) {
       return res.status(404).json({ message: 'Rasm topilmadi' });
     }
-    res.json({ success: true });
+
+    const removedImage = deleted.rows[0];
+
+    // Oddiy rasm o'chirildi — asosiy rasm o'zgarmaydi
+    if (!removedImage.is_primary) {
+      return res.json({ success: true });
+    }
+
+    const nextResult = await db.query(
+      'SELECT id FROM product_color_images WHERE color_id = $1 ORDER BY sort_order, id LIMIT 1',
+      [removedImage.color_id]
+    );
+
+    if (nextResult.rows.length === 0) {
+      return res.json({ success: true, new_primary_id: null });
+    }
+
+    const nextImage = nextResult.rows[0];
+    await db.query('UPDATE product_color_images SET is_primary = TRUE WHERE id = $1', [nextImage.id]);
+    res.json({ success: true, new_primary_id: nextImage.id });
   } catch (err) {
     console.error('Rang rasmini o\'chirishda xato:', err.message);
     res.status(500).json({ message: 'Rasmni o\'chirib bo\'lmadi' });
+  }
+});
+
+// PATCH rang rasmini ASOSIY qilish
+//
+// Shu RANGNING boshqa rasmlarida is_primary = FALSE, tanlanganida TRUE.
+// products.image_url ga TEGILMAYDI — mahsulotning umumiy asosiy rasmi
+// alohida (product_images) boshqariladi.
+router.patch('/colors/images/:imageId/primary', authMiddleware, async (req, res) => {
+  const { imageId } = req.params;
+
+  try {
+    const imageResult = await db.query('SELECT * FROM product_color_images WHERE id = $1', [imageId]);
+    if (imageResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Rasm topilmadi' });
+    }
+
+    const image = imageResult.rows[0];
+
+    // (id = $1) shartli ifoda: tanlangan qatorga TRUE, qolganiga FALSE
+    await db.query(
+      'UPDATE product_color_images SET is_primary = (id = $1) WHERE color_id = $2',
+      [imageId, image.color_id]
+    );
+
+    res.json({ ...image, is_primary: true });
+  } catch (err) {
+    console.error('Rang asosiy rasmini belgilashda xato:', err.message);
+    res.status(500).json({ message: 'Asosiy rasmni belgilab bo\'lmadi' });
   }
 });
 
