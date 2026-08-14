@@ -46,6 +46,14 @@ export default function AdminPage() {
   // Rang rasmlarini partiya bilan yuklashda: "3/7 yuklanmoqda"
   const [colorImagesProgress, setColorImagesProgress] = useState({ done: 0, total: 0 });
 
+  // O'lcham variantlari — har birining O'Z NARXI bor (rangdan mustaqil).
+  // editingSizeId = null -> forma "yangi qo'shish" rejimida
+  // editingSizeId = <id> -> forma o'sha o'lchamni tahrirlash rejimida
+  const [sizes, setSizes] = useState([]);
+  const [sizeForm, setSizeForm] = useState({ name_uz: '', name_ru: '', price: '', old_price: '' });
+  const [sizeError, setSizeError] = useState('');
+  const [editingSizeId, setEditingSizeId] = useState(null);
+
   // Mahsulotning UMUMIY rasmlari (galereya) — rangga bog'liq emas
   const [productImages, setProductImages] = useState([]);
   const [productImagesUploading, setProductImagesUploading] = useState(false);
@@ -1024,6 +1032,159 @@ export default function AdminPage() {
     }
   };
 
+  // ===== O'LCHAM VARIANTLARI (har birida o'z narxi) =====
+  //
+  // Rang RASMNI boshqaradi, o'lcham NARXNI — ikkisi mustaqil
+  // (rang x o'lcham matritsasi yo'q). O'lchamlar ixtiyoriy:
+  // o'lchamsiz mahsulot avvalgidek mahsulot narxi bilan ishlaydi.
+
+  const fetchSizes = async (productId) => {
+    try {
+      const res = await fetch(`${backendUrl}/products/${productId}/sizes`);
+      if (res.ok) {
+        setSizes(await res.json());
+      }
+    } catch (err) {
+      console.error('O\'lchamlarni yuklashda xato:', err);
+    }
+  };
+
+  const handleSizeFormChange = (e) => {
+    const { name, value } = e.target;
+    setSizeForm(prev => ({ ...prev, [name]: value }));
+  };
+
+  const resetSizeForm = () => {
+    setEditingSizeId(null);
+    setSizeError('');
+    setSizeForm({ name_uz: '', name_ru: '', price: '', old_price: '' });
+  };
+
+  // Bitta forma ikki ish uchun: editingSizeId bo'sh bo'lsa — yangi
+  // o'lcham qo'shadi, to'lgan bo'lsa — o'shani tahrirlaydi.
+  const handleSubmitSize = async (e) => {
+    e.preventDefault();
+    setSizeError('');
+
+    if (!sizeForm.name_uz.trim()) {
+      setSizeError(language === 'uz'
+        ? 'O\'lcham nomini (o\'zbekcha) yozing.'
+        : 'Введите название размера (на узбекском).');
+      return;
+    }
+
+    if (sizeForm.price === '' || isNaN(Number(sizeForm.price)) || Number(sizeForm.price) <= 0) {
+      setSizeError(language === 'uz'
+        ? 'O\'lcham narxini to\'g\'ri son bilan yozing.'
+        : 'Укажите корректную цену размера.');
+      return;
+    }
+
+    const url = editingSizeId
+      ? `${backendUrl}/sizes/${editingSizeId}`
+      : `${backendUrl}/products/${editingId}/sizes`;
+
+    try {
+      const res = await fetch(url, {
+        method: editingSizeId ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(sizeForm),
+        credentials: 'include'
+      });
+
+      if (res.status === 401 || res.status === 403) {
+        setIsAuthenticated(false);
+        return;
+      }
+
+      if (res.ok) {
+        resetSizeForm();
+        fetchSizes(editingId);
+      } else {
+        const data = await res.json();
+        setSizeError(data.message || (language === 'uz'
+          ? 'O\'lchamni saqlab bo\'lmadi.'
+          : 'Не удалось сохранить размер.'));
+      }
+    } catch (err) {
+      setSizeError('Server connection error.');
+    }
+  };
+
+  // Tahrirlash: o'lcham qiymatlari formaga tushadi.
+  // old_price bo'sh (NULL) bo'lishi mumkin — bo'sh satrga aylantiramiz.
+  const handleEditSize = (size) => {
+    setSizeError('');
+    setEditingSizeId(size.id);
+    setSizeForm({
+      name_uz: size.name_uz || '',
+      name_ru: size.name_ru || '',
+      price: size.price != null ? String(size.price) : '',
+      old_price: size.old_price != null ? String(size.old_price) : ''
+    });
+  };
+
+  // "Mavjud / tugagan" holati — rangdagi kabi: tugagan o'lcham
+  // saytdan o'chmaydi, shunchaki tanlab bo'lmaydi.
+  const handleToggleSizeAvailability = async (size) => {
+    setSizeError('');
+    try {
+      const res = await fetch(`${backendUrl}/sizes/${size.id}/availability`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_available: !size.is_available }),
+        credentials: 'include'
+      });
+
+      if (res.status === 401 || res.status === 403) {
+        setIsAuthenticated(false);
+        return;
+      }
+
+      if (res.ok) {
+        fetchSizes(editingId);
+      } else {
+        setSizeError(language === 'uz'
+          ? 'O\'lcham holatini o\'zgartirib bo\'lmadi.'
+          : 'Не удалось изменить статус размера.');
+      }
+    } catch (err) {
+      setSizeError('Server connection error.');
+    }
+  };
+
+  const handleDeleteSize = async (sizeId) => {
+    const confirmText = language === 'uz'
+      ? 'Bu o\'lcham o\'chiriladi. Davom etamizmi?'
+      : 'Этот размер будет удалён. Продолжить?';
+    if (!window.confirm(confirmText)) return;
+
+    setSizeError('');
+    try {
+      const res = await fetch(`${backendUrl}/sizes/${sizeId}`, {
+        method: 'DELETE',
+        credentials: 'include'
+      });
+
+      if (res.status === 401 || res.status === 403) {
+        setIsAuthenticated(false);
+        return;
+      }
+
+      if (res.ok) {
+        // Tahrirlanayotgan o'lcham o'chirilgan bo'lsa, forma bo'shaydi
+        if (editingSizeId === sizeId) resetSizeForm();
+        fetchSizes(editingId);
+      } else {
+        setSizeError(language === 'uz'
+          ? 'O\'lchamni o\'chirib bo\'lmadi.'
+          : 'Не удалось удалить размер.');
+      }
+    } catch (err) {
+      setSizeError('Server connection error.');
+    }
+  };
+
   // Galereyani ikkiga ajratamiz: tepadagi "⭐ Asosiy rasm" zonasi va
   // pastdagi "Qo'shimcha rasmlar" gridi. Ma'lumot manbasi BITTA —
   // product_images jadvali va uning is_primary ustuni.
@@ -1038,7 +1199,9 @@ export default function AdminPage() {
     setColorError('');
     setColorForm({ name_uz: '', name_ru: '', hex_code: '#1E5AA8' });
     setProductImagesError('');
+    resetSizeForm();
     fetchColors(prod.id);
+    fetchSizes(prod.id);
     // Galereyani tayyorlaymiz: bo'sh bo'lsa, eski bitta rasm birinchi
     // galereya rasmi sifatida ko'chiriladi (seed).
     loadGalleryForEdit(prod.id, prod.image_url || '');
@@ -1063,6 +1226,8 @@ export default function AdminPage() {
     setColorError('');
     setColors([]);
     setColorForm({ name_uz: '', name_ru: '', hex_code: '#1E5AA8' });
+    setSizes([]);
+    resetSizeForm();
     setProductImages([]);
     setProductImagesError('');
     setProductForm({
@@ -2044,6 +2209,146 @@ export default function AdminPage() {
                 )}
               </div>
               {/* ===== RANG VARIANTLARI TUGADI ===== */}
+
+              {/* ===== O'LCHAMLAR (har birida o'z narxi) ===== */}
+              <div className="colors-section">
+                <h3 className="colors-title">
+                  {language === 'uz' ? 'O\'lchamlar (narxi bilan)' : 'Размеры (со своей ценой)'}
+                </h3>
+
+                {!isEditing ? (
+                  <p className="colors-hint">
+                    {language === 'uz'
+                      ? 'O\'lcham qo\'shish uchun avval mahsulotni saqlang, so\'ng uni ro\'yxatdan "Tahrirlash" tugmasi bilan oching.'
+                      : 'Чтобы добавить размеры, сначала сохраните товар, затем откройте его кнопкой «Редактировать» из списка.'}
+                  </p>
+                ) : (
+                  <>
+                    <p className="colors-hint">
+                      {language === 'uz'
+                        ? 'O\'lchamlar ixtiyoriy. Har o\'lchamning o\'z narxi bo\'ladi — saytda o\'lcham tanlanganda shu narx ko\'rsatiladi. O\'lcham qo\'shmasangiz, mahsulot avvalgidek o\'z narxi bilan ishlaydi.'
+                        : 'Размеры необязательны. У каждого размера своя цена — при выборе размера на сайте показывается именно она. Без размеров товар работает со своей обычной ценой.'}
+                    </p>
+
+                    {sizeError && <div className="error-banner">{sizeError}</div>}
+
+                    {/* Mavjud o'lchamlar */}
+                    {sizes.map(size => (
+                      <div className="color-card size-card" key={size.id}>
+                        <div className="color-card-head">
+                          <span className="size-name">
+                            {size.name_uz}
+                            {size.name_ru ? ` / ${size.name_ru}` : ''}
+                          </span>
+
+                          <span className="size-price">
+                            {parseFloat(size.price).toLocaleString()} {t('products.priceCurrency')}
+                            {size.old_price && (
+                              <span className="size-old-price">
+                                {parseFloat(size.old_price).toLocaleString()} {t('products.priceCurrency')}
+                              </span>
+                            )}
+                          </span>
+
+                          {/* Mavjud / tugagan kaliti */}
+                          <label className="availability-toggle">
+                            <input
+                              type="checkbox"
+                              checked={size.is_available}
+                              onChange={() => handleToggleSizeAvailability(size)}
+                            />
+                            <span className="toggle-track"><span className="toggle-knob" /></span>
+                            <span className={`toggle-label ${size.is_available ? 'is-on' : 'is-off'}`}>
+                              {size.is_available
+                                ? (language === 'uz' ? 'Mavjud' : 'В наличии')
+                                : (language === 'uz' ? 'Tugagan' : 'Нет в наличии')}
+                            </span>
+                          </label>
+
+                          <button
+                            type="button"
+                            onClick={() => handleEditSize(size)}
+                            className="action-link"
+                          >
+                            {language === 'uz' ? 'Tahrirlash' : 'Редактировать'}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteSize(size.id)}
+                            className="action-link delete-link"
+                          >
+                            {language === 'uz' ? 'O\'chirish' : 'Удалить'}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+
+                    {sizes.length === 0 && (
+                      <p className="colors-hint">
+                        {language === 'uz' ? 'Hali o\'lcham qo\'shilmagan' : 'Размеры пока не добавлены'}
+                      </p>
+                    )}
+
+                    {/* Qo'shish / tahrirlash formasi — bitta forma ikki ish uchun */}
+                    <div className="color-add-block">
+                      <p className="colors-hint">
+                        {editingSizeId
+                          ? (language === 'uz' ? 'O\'lchamni tahrirlash' : 'Редактирование размера')
+                          : (language === 'uz' ? 'Yangi o\'lcham qo\'shish' : 'Добавить новый размер')}
+                      </p>
+
+                      <div className="size-add-row">
+                        <input
+                          type="text"
+                          name="name_uz"
+                          value={sizeForm.name_uz}
+                          onChange={handleSizeFormChange}
+                          placeholder={language === 'uz' ? 'O\'lcham (uz), masalan 120x60' : 'Размер (uz), напр. 120x60'}
+                          className="form-input"
+                        />
+                        <input
+                          type="text"
+                          name="name_ru"
+                          value={sizeForm.name_ru}
+                          onChange={handleSizeFormChange}
+                          placeholder={language === 'uz' ? 'O\'lcham (ru)' : 'Размер (ru)'}
+                          className="form-input"
+                        />
+                        <input
+                          type="number"
+                          name="price"
+                          value={sizeForm.price}
+                          onChange={handleSizeFormChange}
+                          placeholder={language === 'uz' ? 'Narxi' : 'Цена'}
+                          className="form-input"
+                        />
+                        <input
+                          type="number"
+                          name="old_price"
+                          value={sizeForm.old_price}
+                          onChange={handleSizeFormChange}
+                          placeholder={language === 'uz' ? 'Eski narxi (ixtiyoriy)' : 'Старая цена (необяз.)'}
+                          className="form-input"
+                        />
+
+                        <button type="button" onClick={handleSubmitSize} className="btn-secondary">
+                          {editingSizeId
+                            ? (language === 'uz' ? 'Saqlash' : 'Сохранить')
+                            : (language === 'uz' ? 'Qo\'shish' : 'Добавить')}
+                        </button>
+
+                        {editingSizeId && (
+                          <button type="button" onClick={resetSizeForm} className="btn-secondary">
+                            {language === 'uz' ? 'Bekor qilish' : 'Отмена'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+              {/* ===== O'LCHAMLAR TUGADI ===== */}
             </div>
 
             {/* Right: Products List */}
@@ -3460,6 +3765,45 @@ export default function AdminPage() {
           flex-wrap: wrap;
           gap: 8px;
           align-items: center;
+        }
+
+        /* O'lchamlar: nomi + narxi + kalit + tugmalar bitta qatorda */
+        /* Rang kartochkasidan farqi: ostida rasmlar qatori yo'q */
+        .size-card .color-card-head {
+          margin-bottom: 0;
+        }
+
+        .size-name {
+          font-size: 13px;
+          font-weight: 600;
+          flex-grow: 1;
+        }
+
+        .size-price {
+          font-size: 13px;
+          font-weight: 700;
+          color: #F45B5B;
+          white-space: nowrap;
+        }
+
+        .size-old-price {
+          margin-left: 6px;
+          font-size: 12px;
+          font-weight: 400;
+          color: var(--secondary-text);
+          text-decoration: line-through;
+        }
+
+        .size-add-row {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          align-items: center;
+        }
+
+        .size-add-row .form-input {
+          flex: 1 1 130px;
+          min-width: 0;
         }
 
         .color-add-row .form-input {
